@@ -1,0 +1,7 @@
+50176
+Traceback (most recent call last):
+  File "/data/KCC2025/STDP/main.py", line 174, in <module>
+    train(
+  File "/data/KCC2025/STDP/main.py", line 90, in train
+    for epoch in range(num_epochs):
+NameError: name 'num_epochs' is not defined
