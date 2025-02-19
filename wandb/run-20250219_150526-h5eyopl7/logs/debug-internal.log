@@ -1,0 +1,7 @@
+{"time":"2025-02-19T15:05:26.643824281Z","level":"INFO","msg":"stream: starting","core version":"0.19.6","symlink path":"/data/KCC2025/wandb/run-20250219_150526-h5eyopl7/logs/debug-core.log"}
+{"time":"2025-02-19T15:05:26.758243628Z","level":"INFO","msg":"created new stream","id":"h5eyopl7"}
+{"time":"2025-02-19T15:05:26.758303257Z","level":"INFO","msg":"stream: started","id":"h5eyopl7"}
+{"time":"2025-02-19T15:05:26.758327738Z","level":"INFO","msg":"writer: Do: started","stream_id":"h5eyopl7"}
+{"time":"2025-02-19T15:05:26.758361472Z","level":"INFO","msg":"handler: started","stream_id":"h5eyopl7"}
+{"time":"2025-02-19T15:05:26.758387265Z","level":"INFO","msg":"sender: started","stream_id":"h5eyopl7"}
+{"time":"2025-02-19T15:05:27.168243182Z","level":"INFO","msg":"Starting system monitor"}
