@@ -10,7 +10,7 @@ from tqdm.auto import tqdm
 import wandb
 import matplotlib.pyplot as plt
 from spikingjelly.activation_based import neuron, surrogate,functional, encoding
-
+from Adversial import generate_adversial_image, save_image
 class SNN(nn.Module):
     def __init__(self):
         super(SNN, self).__init__()
@@ -83,6 +83,7 @@ for epoch in range(num_epochs):
         
     print('done')
     net.eval()
+    
     total_Loss_test = 0
     total_acc_test = 0
     with th.no_grad():
@@ -102,4 +103,7 @@ for epoch in range(num_epochs):
             functional.reset_net(net)
         Loss_test = total_Loss_test / (10000/32)
         acc_test = (total_acc_test / 10000) * 100
+        
+    adversarial_image = generate_adversial_image(net, test_image, test_label, epsilon = 0.1)
+    save(test_image, adversarial_image, './images/comparison_image.png', test_label)
     print(f"{epoch} epoch\'s loss: {Loss_test}, accuracy rate : {acc_test}")
