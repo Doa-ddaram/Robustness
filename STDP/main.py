@@ -10,8 +10,15 @@ import torchvision.transforms as transforms
 from tqdm.auto import tqdm
 import wandb
 import matplotlib.pyplot as plt
-from spikingjelly.activation_based import neuron, surrogate,functional, encoding, learning, layer
+
+from spikingjelly.activation_based import neuron, surrogate,functional, learning, layer
 import pdb
+import os
+import shutil
+cache_dir = "/root/.cache/pip"
+if os.path.exists(cache_dir):
+    print("activate")
+    shutil.rmtree(cache_dir)
 
 class SNN_STDP(nn.Module):
     def __init__(self):
@@ -23,7 +30,6 @@ class SNN_STDP(nn.Module):
         self.sn2 = neuron.IFNode()
         self.pool2 = layer.MaxPool2d(kernel_size = 2, stride = 2)
         self.linear1 = layer.Linear(in_features=7 * 7 * 64, out_features=10, bias=False)
-        self.sn3 = neuron.IFNode()
     def forward(self, x):
         x = self.cv1(x)
         x = self.sn1(x)
@@ -31,9 +37,8 @@ class SNN_STDP(nn.Module):
         x = self.conv2(x)
         x = self.sn2(x)
         x = self.pool2(x)
-        x = x.view(x.size(0), -1)
+        x = x.view(x.size(0),x.size(1), -1)
         x = self.linear1(x)
-        x = self.sn3(x)
         return x
 
 
@@ -52,35 +57,39 @@ train_loader = DataLoader(
 test_loader = DataLoader(
     MNIST_test, batch_size = batch_size, shuffle = False, num_workers = num_workers
 )
-num_epochs = 10
+num_epochs = 5
 T = 20
+
+net.train()
+net = net.to(device)
+if th.cuda.device_count() > 1 :
+    net = nn.DataParallel(net)
+instances_stdp = ( layer.Linear,
+                    layer.Conv1d,
+                    layer.BatchNorm2d,
+                    layer.Conv2d,
+                    layer.MaxPool2d,)
+stdp_learners = []
 
 step_mode = 'm'
 tau_pre = 2.
 tau_post = 10.
 def f_weight(x):
     return th.clamp(x, -1, 1.)
-encoder = encoding.PoissonEncoder()
-Loss_function= nn.CrossEntropyLoss().to(device)
-
+functional.set_step_mode(net, 'm')
+Loss_function= nn.CrossEntropyLoss()
 
 for epoch in range(num_epochs):
     total_Loss_train = 0
     total_acc_train = 0
-    net.train()
-    instances_stdp = (layer.Linear,
-                      layer.Conv2d,
-                      layer.MaxPool2d)
-    stdp_learners = []
     for i, (data, target) in tqdm(enumerate(iter(train_loader))):
-        data = data.to(device)
-        target = target.to(device)
-        data_batch, target_batch = Variable(data), Variable(target)
-        data_batch = data_batch.unsqueeze(0).repeat(8, 1, 1, 1, 1)
-        for i, layers in enumerate(net.modules()):
+        data, target = data.to(device), target.to(device)    
+        data, target = Variable(data), Variable(target)
+        data = data.unsqueeze(0).repeat(8, 1, 1, 1, 1)
+        for i, layers in enumerate(net.children()):
             if isinstance(layers, instances_stdp):
-                if i + 2 < len(list(net.modules())) :
-                    sn_layer = list(net.modules())[i+1]
+                if i + 2 < len(list(net.children())) :
+                    sn_layer = list(net.children())[i+1]
                 stdp_learners.append(
                     learning.STDPLearner(
                         step_mode = step_mode,
@@ -93,33 +102,34 @@ for epoch in range(num_epochs):
                     )
                 )
         parameters_stdp = []
-        for modules in net.modules():
-            if isinstance(modules, instances_stdp):
-                for parameters in modules.parameters():
+        for module in net.modules():
+            if isinstance(module, instances_stdp):
+                for parameters in module.parameters():
                     parameters_stdp.append(parameters)
         parameters_stdp_set = set(parameters_stdp)
+        
         parameters_gd = []
         for parameters in net.parameters():
             if parameters not in parameters_stdp_set:
                 parameters_gd.append(parameters)
+        y_hat = net(data).mean(0)
+        Loss = Loss_function(y_hat, target)
         Optimizer_stdp = th.optim.SGD(parameters_stdp, lr = learning_rate, momentum = 0.)
         Optimizer_gd = th.optim.Adam(net.parameters(), lr = learning_rate)
         Optimizer_stdp.zero_grad()
         Optimizer_gd.zero_grad()
-        y_hat_batch = net(data_batch).mean(0)
-        print(y_hat_batch)
-        Loss = Loss_function(y_hat_batch, target_batch)
-
 
         Loss.backward()
-
+    
         for i in range(stdp_learners.__len__()):
             stdp_learners[i].step(on_grad = True)
         Optimizer_stdp.step()
         Optimizer_gd.step()
         functional.reset_net(net)
+        for i in range(stdp_learners.__len__()):
+            stdp_learners[i].reset()
         total_Loss_train += Loss.item()
-        pred_target = y_hat_batch.argmax(1)
+        pred_target = y_hat.argmax(1)
         total_acc_train += (pred_target == target).sum()
     Loss_train = total_Loss_train / (60000 / batch_size)
     acc_train = (total_acc_train / 60000) * 100 
@@ -127,24 +137,21 @@ for epoch in range(num_epochs):
 
         
     print('done')
-    # net.eval()
-    # total_Loss_test = 0
-    # total_acc_test = 0
-    # with th.no_grad():
-    #     for i, (data, target) in tqdm(enumerate(iter(test_loader))):
-    #         data = data.to(device)
-    #         target = target.to(device)
-    #         target_onehot = F.one_hot(target, 10).float()
-    #         y_hat_t, y_hat = 0, 0
-    #         for t in range(T):
-    #             encode = encoder(data)
-    #             y_hat_t += net(encode)
-    #         y_hat = y_hat_t / T
-    #         Loss = F.mse_loss(y_hat, target_onehot)
-    #         total_Loss_test += Loss.item()
-    #         pred_target = y_hat.argmax(1)
-    #         total_acc_test += (pred_target == target).sum()
-    #         functional.reset_net(net)
-    #     Loss_test = total_Loss_test / (10000/32)
-    #     acc_test = (total_acc_test / 10000) * 100
-    # print(f"{epoch} epoch\'s loss: {Loss_test}, accuracy rate : {acc_test}")
+net.eval()
+net = net.to(device)
+if th.cuda.device_count() > 1 :
+    net = nn.DataParallel(net)
+total_Loss_test = 0
+total_acc_test = 0
+for i, (data, target) in tqdm (enumerate(iter(test_loader))):
+    data, target = data.to(device), target.to(device)
+    data = data.unsqueeze(0).repeat(8, 1, 1, 1, 1)
+    data, target = Variable(data), Variable(target)
+    y_hat = net(data).mean(0)
+    total_acc_test += (y_hat.max(1)[1] == target.to(device)).float().sum().item()
+    total_Loss_test += target.numel()
+    functional.reset_net(net)
+print('test')
+test_accuracy = total_acc_test/ total_Loss_test
+print(test_accuracy)
+    

@@ -9,8 +9,8 @@ import torchvision.transforms as transforms
 from tqdm.auto import tqdm
 import wandb
 import matplotlib.pyplot as plt
-from adversial_image import generate_adversial_image, display,save
-
+from adversial_image import generate_adversial_image, save_image
+from advertorch.attacks import GradientAttack
 
 class CNN(nn.Module):
     def __init__(self):
@@ -53,7 +53,8 @@ test_loader = DataLoader(
 num_epochs = 10
 Loss_function= nn.CrossEntropyLoss().to(device)
 Optimizer = th.optim.Adam(net.parameters(), lr = learning_rate)
-
+adversary = GradientAttack(net, loss_fn = nn.CrossEntropyLoss(reduction="sum"),
+                           eps = 1/255, clip_min = 0.0, clip_max = 1.0, targeted = False)
 for epoch in range(num_epochs):
     total_Loss_train = 0
     total_acc_train = 0
@@ -61,8 +62,9 @@ for epoch in range(num_epochs):
     for i, (data, target) in tqdm(enumerate(iter(train_loader))):
         data = data.to(device)
         target = target.to(device)
+        adversial_data = adversary.perturb(data, target)
         Optimizer.zero_grad()
-        y_hat = net(data)
+        y_hat = net(adversial_data)
         Loss = Loss_function(y_hat, target)
         Loss.backward()
         Optimizer.step()
@@ -79,9 +81,9 @@ for epoch in range(num_epochs):
     test_image, test_label = next(iter(test_loader))
     test_image, test_label = test_image[0].to(device), test_label[0].to(device)
     
-    display(test_image, test_label, adversarial = False)
     adversarial_image = generate_adversial_image(net, test_image, test_label, epsilon = 0.1)
-    save(test_image, adversarial_image, './images/comparison_image.png', test_label)
+    save_image(test_image, adversarial_image, './images/comparison_image.png', test_label)
+    
     total_Loss_test = 0
     total_acc_test = 0
     with th.no_grad():
