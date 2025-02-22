@@ -1,18 +1,15 @@
 import torch as th
 import torch.nn as nn
-import torch.nn.functional as F
-from torch.utils.data import Dataset, DataLoader
+#import torch.nn.functional as F
+from torch.utils.data import DataLoader
 import torchvision
-from torch.autograd import Variable
+
 import numpy as np
 from torchvision.datasets import MNIST
 import torchvision.transforms as transforms
 from tqdm.auto import tqdm
 import wandb
-import matplotlib.pyplot as plt
-
 from spikingjelly.activation_based import neuron, surrogate,functional, learning, layer
-import pdb
 
 time_steps = 10
 batch_size = 32
