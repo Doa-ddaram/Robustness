@@ -43,17 +43,17 @@ def save_image(original_image, adversarial_image, filename, target):
     param target : target of the image
     '''
     
-    original_image = original_image.squeeze(0)
-    adversarial_image = adversarial_image.squeeze(0)
+    original_image = original_image[0].squeeze(0)
+    adversarial_image = adversarial_image[0].squeeze(0)
     
     fig, axes = plt.subplots(1, 2, figsize = (10, 5))
     
     axes[0].imshow(original_image.cpu().numpy(), cmap = 'gray')
-    axes[0].set_title(f"Original\nLabel: {target.item()}")
+    axes[0].set_title(f"Original\nLabel: {target[0].item()}")
     axes[0].axis('off')
     
     axes[1].imshow(adversarial_image.cpu().numpy(), cmap = 'gray')
-    axes[1].set_title(f"adversarial\nLabel: {target.item()}")
+    axes[1].set_title(f"adversarial\nLabel: {target[0].item()}")
     axes[1].axis('off')
     
     plt.tight_layout()
@@ -180,3 +180,9 @@ def deepfool(model, image, label, max_iter=50, overshoot=0.02):
         image = torch.clamp(image, 0, 1)
         
     return image
+
+def SimBA(model, dataset, image_size):
+    batch_size = 32
+    dataset_image_size = 28 * 28
+    assert image_size == dataset_image_size
+    

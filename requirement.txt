@@ -6,3 +6,4 @@ wandb
 matplotlib
 spikingjelly
 tensorboard
+argparser
