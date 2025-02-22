@@ -1,0 +1,3 @@
+[submodule "utils/spikingjelly"]
+	path = utils/spikingjelly
+	url = https://github.com/doa-ddaram/utils/spikingjelly.git

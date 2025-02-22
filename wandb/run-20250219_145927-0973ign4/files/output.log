@@ -1,4 +1,0 @@
-Traceback (most recent call last):
-  File "/data/KCC2025/STDP/main.py", line 55, in <module>
-    net = SNN_STDP().to(device)
-NameError: name 'device' is not defined
