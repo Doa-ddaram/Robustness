@@ -9,7 +9,8 @@ from utils.model.stdp import SNN_STDP
 from tqdm.auto import tqdm
 import argparse
 from utils.spikingjelly.spikingjelly.activation_based import functional, layer, learning
-from utils.Adversarial import adversial_image
+from utils.Adversarial.nes import *
+from utils.Adversarial.adversial_image import save_image
 from typing import Tuple
 from torch.autograd import Variable
 import numpy as np
@@ -57,7 +58,9 @@ def test_CNN(
     with th.no_grad():
         for i, (data, target) in tqdm(enumerate(iter(data_loader))):
             data, target = data.to(device), target.to(device)
-            y_hat = net(data)
+            adv_imgs = nes(net, data, target, iteration= 5, sample_size=10)
+            y_hat = net(adv_imgs)
+            save_image(data,adv_imgs, './images/comparison_image_cnn.png', target)
             loss = loss_fn(y_hat, target)
             total_loss += loss.item()
             pred_target = y_hat.argmax(1)
@@ -103,7 +106,9 @@ def test_SNN(
     with th.no_grad():
         for i, (data, target) in tqdm(enumerate(iter(data_loader))):
             data, target = data.to(device), target.to(device)
-            y_hat = net(data)
+            adv_imgs = nes(net, data, target, iteration= 5, sample_size=10)
+            y_hat = net(adv_imgs)
+            save_image(data,adv_imgs, './images/comparison_image_snn.png', target)
             loss = loss_fn(y_hat, target)
             total_loss += loss.item()
             pred_target = y_hat.argmax(1)
@@ -179,7 +184,7 @@ def train_STDP(
             loss.backward()
         
             for i in range(stdp_learners.__len__()):
-                stdp_learners[i].step(on_grad = True)
+                stdp_learners[i].step(on_grad = False)
             optimizer_stdp.step()
             optimizer.step()
             functional.reset_net(net)
@@ -206,7 +211,7 @@ def test_STDP(
     total_loss, total_acc = 0, 0
     for i, (data, target) in tqdm (enumerate(iter(data_loader))):
         data, target = data.to(device), target.to(device)
-        data, target = Variable(data), Variable(target)
+        data, target = Variable(data), Variable(target) # Yet, not use adversarial attack. because of unique nature of stdp. 
         data = data.unsqueeze(0).repeat(8, 1, 1, 1, 1)
         y_hat = net(data).mean(0)
         loss = loss_fn(y_hat, target)
