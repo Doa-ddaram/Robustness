@@ -27,13 +27,6 @@ class SNN(nn.Module):
         #x = x.unsqueeze(0).repeat(self.T, 1, 1, 1, 1)
         x = self.layer1(x)
         x = self.layer2(x)
-        #x = self.conv1(x)
-        #print(x.shape)
-        #x = self.sn(x)
-        #x = self.pool(x)
-        #x = self.conv2(x)
-        #x = self.sn(x)
-        #x = self.pool(x)
         x = x.view(x.size(0), -1)
         x = self.linear1(x)
         return x
