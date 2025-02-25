@@ -121,7 +121,7 @@ def train_SNN(
         loss = total_loss / length
         acc = (total_acc / length) * 100 
         print(f'{epoch + 1} epoch\'s of Loss : {loss}, accuracy rate : {acc}')
-        if (epoch) % 10 == 0:
+        if (epoch +1) % 10 == 0:
             if attack :
                 adv_loss, adv_acc = test_SNN(net, test_loader, attack = True)
                 print(f'adv acc of {epoch+1} : {adv_acc}, and adv loss of {epoch+1} : {adv_loss}')
@@ -141,11 +141,14 @@ def test_SNN(
     for i, (data, target) in tqdm(enumerate(iter(data_loader))):
         data, target = data.to(device), target.to(device)
         target_onehot = F.one_hot(target, 10).float()
+        was_training = net.training
+        net.train()
         if attack:
             with th.enable_grad():
-                adv_imgs= generate_adversial_image(net, data, target_onehot)
+                adv_imgs= generate_adversial_image(net, data, target)
             save_image(data,adv_imgs, './images/comparison_image_snn.png', target)
             data = adv_imgs
+        net.train(was_training)
         with th.no_grad():
             y_hat = 0.0
             for _ in range(T):
@@ -158,8 +161,8 @@ def test_SNN(
             total_acc += (pred_target == target).sum().item()
             length += len(target)
             functional.reset_net(net)
-        total_loss /= length
-        total_acc = total_acc / length * 100
+    total_loss /= length
+    total_acc = total_acc / length * 100
     return total_loss, total_acc
 
 
@@ -219,6 +222,7 @@ def train_STDP(
             for parameters in net.parameters():
                 if parameters not in parameters_stdp_set:
                     parameters_gd.append(parameters)
+            
             y_hat = net(data).mean(0)
             loss = loss_fn(y_hat, target)
             optimizer_stdp = th.optim.SGD(parameters_stdp, lr = learning_rate, momentum = 0.)
@@ -227,7 +231,7 @@ def train_STDP(
             optimizer.zero_grad()
 
             loss.backward()
-        
+            print(stdp_learners)
             for i in range(stdp_learners.__len__()):
                 stdp_learners[i].step(on_grad = False)
             optimizer_stdp.step()

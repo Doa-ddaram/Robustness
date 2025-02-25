@@ -1,7 +1,6 @@
 import torch as th
-import torch.nn as nn
+import torch.nn.functional as F
 import matplotlib.pyplot as plt
-loss_fn = nn.CrossEntropyLoss()
 def generate_adversial_image(model, image, target, epsilon = 0.1):
     '''
     Method : FGSM
@@ -10,17 +9,16 @@ def generate_adversial_image(model, image, target, epsilon = 0.1):
     param target : target of original image
     param epsilon : adversial intensity
     '''
-    image = image.detach()
     image.requires_grad = True
     y_hat = model(image)
-    loss = loss_fn(y_hat, target)
+    loss = F.cross_entropy(y_hat, target)
     model.zero_grad()
     loss.backward()
-    grad_sign = image.grad.data.sign
+    grad_sign = image.grad.sign()
     if image.grad is None:
         raise ValueError("Not calculate Gradient")
     adversarial_image = image + epsilon * grad_sign # image + pertubation
-    adversarial_image = th.clamp(adversarial_image, 0, 1.).detach()
+    adversarial_image = th.clamp(adversarial_image, 0, 1).detach()
     return adversarial_image
     
 def save_image(original_image, adversarial_image, filename, target):
