@@ -42,17 +42,24 @@ def save_image(original_image, adversarial_image, filename, target):
     param filename : saved file name
     param target : target of the image
     '''
-    
-    original_image = original_image[0].squeeze(0)
-    adversarial_image = adversarial_image[0].squeeze(0)
-    
+    channel = original_image[0].shape[0]
+    if channel == 1 :
+        original_image = original_image[0].squeeze(0).cpu().numpy()
+        adversarial_image = adversarial_image[0].squeeze(0).cpu().numpy()
+        c = 'gray'
+    else:
+        original_image = original_image * 0.5 + 0.5
+        original_image = original_image[0].permute(1, 2, 0).cpu().numpy()
+        adversarial_image = adversarial_image * 0.5 + 0.5
+        adversarial_image = adversarial_image[0].permute(1, 2, 0).cpu().numpy()
+        c = None
     fig, axes = plt.subplots(1, 2, figsize = (10, 5))
     
-    axes[0].imshow(original_image.cpu().numpy(), cmap = 'gray')
+    axes[0].imshow(original_image, cmap = c)
     axes[0].set_title(f"Original\nLabel: {target[0].item()}")
     axes[0].axis('off')
     
-    axes[1].imshow(adversarial_image.cpu().numpy(), cmap = 'gray')
+    axes[1].imshow(adversarial_image, cmap = c)
     axes[1].set_title(f"adversarial\nLabel: {target[0].item()}")
     axes[1].axis('off')
     
