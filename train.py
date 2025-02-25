@@ -23,7 +23,8 @@ parser.add_argument('--net', type = str, help = "Input Model type (CNN or SNN or
 parser.add_argument('-t', type = int, help = 'training time step')
 parser.add_argument('--seed', type = int, help = 'fixed random seed')
 parser.add_argument('--dset', type = str, help = 'input dataset.')
-parser.add_argument('--attack_status', type = bool, help = 'attack or not, type = bool')
+
+parser.add_argument('--attack', action=argparse.BooleanOptionalAction, help = 'enable or disable attack, type = bool')
 args = parser.parse_args()
 
 def train_CNN(
@@ -31,9 +32,8 @@ def train_CNN(
     data_loader : DataLoader[tuple[th.Tensor, th.Tensor]],
     loss_fn : Callable[[th.Tensor,th.Tensor], th.Tensor],
     num_epochs : int = 10,
+    attack : bool = False
           ) -> None : 
-    if th.cuda.device_count() > 1 :
-        net = nn.DataParallel(net)
     for epoch in range(num_epochs):
         total_loss, total_acc = 0, 0
         net.train()
@@ -52,55 +52,49 @@ def train_CNN(
         loss = total_loss / length
         acc = (total_acc / length) * 100
         print(f'{epoch + 1} epoch\'s of Loss : {loss}, accuracy rate : {acc}')
-        if epoch % 10 == 0:
-            test_loss, test_acc = test_CNN(net, test_loader, loss_fn = Loss_function)
-            print(f'acc of {epoch+1} : {test_acc}, and loss of {epoch+1} : {test_loss}')
+        if (epoch+ 1) % 10 == 0:
+            if attack :
+                adv_loss, adv_acc = test_CNN(net, test_loader, loss_fn = Loss_function, attack = True)
+                print(f'adv acc of {epoch+1} : {adv_acc}, and adv loss of {epoch+1} : {adv_loss}')
+            clean_loss, clean_acc = test_CNN(net, test_loader, loss_fn = Loss_function, attack = False)
+            print(f'clean acc of {epoch+1} : {clean_acc}, and clean loss of {epoch+1} : {clean_loss}')
+            
                     
 def test_CNN(
     net : nn.Module,
     data_loader : DataLoader[tuple[th.Tensor, th.Tensor]], 
     loss_fn : Callable[[th.Tensor, th.Tensor], th.Tensor],
+    attack : bool = False
              ) -> Tuple[float, float]: 
-    total_acc_clean, total_acc_adv = 0, 0
-    total_loss_clean, total_loss_adv = 0, 0
+    total_acc = 0
+    total_loss = 0
     net.eval()
     length = 0
-    with th.no_grad():
-        for i, (data, target) in tqdm(enumerate(iter(data_loader))):
-            data, target = data.to(device), target.to(device)
-            y_hat_clean= net(data)
-            loss_clean = loss_fn(y_hat_clean, target)
-            total_loss_clean += loss_clean.item()
-            pred_target_clean = y_hat_clean.argmax(1)
-            total_acc_clean += (pred_target_clean == target).sum().item()
-            length += len(target)
-        total_loss_clean /= length
-        total_acc_clean = total_acc_clean / length * 100
-        loss, acc = (total_loss_clean) / length, (total_acc_clean / length) * 100
-        print(total_loss_clean, total_acc_clean)
-    with th.no_grad():
-        for i, (data, target) in tqdm(enumerate(iter(data_loader))):
-            data, target = data.to(device), target.to(device)
-            adv_imgs = generate_adversial_image(net, data, target)
-            y_hat_adv = net(adv_imgs)
+    for i, (data, target) in tqdm(enumerate(iter(data_loader))):
+        data, target = data.to(device), target.to(device)
+        if attack :
+            adv_imgs= generate_adversial_image(net, data, target)
             save_image(data,adv_imgs, './images/comparison_image_cnn.png', target)
-            loss_adv = loss_fn(y_hat_adv, target)
-            total_loss_adv += loss_adv.item()
-            pred_target_adv = y_hat_adv.argmax(1)
-            total_acc_adv += (pred_target_adv == target).sum().item()
-        total_loss_clean /= length
-        total_acc_clean = total_acc_clean / length * 100
-        total_loss_adv /= length
-        total_acc_adv = total_acc_adv / length * 100
-        print(total_loss_adv, total_acc_adv)
-        loss, acc = total_loss_clean, total_acc_clean
-    return loss, acc
+            data = adv_imgs
+            
+        with th.no_grad():
+            y_hat = net(data)
+            loss = loss_fn(y_hat, target)
+            total_loss += loss.item()
+            pred_target = y_hat.argmax(1)
+            total_acc += (pred_target == target).sum().item()
+            length += len(target)
+    total_loss /= length
+    total_acc = total_acc / length * 100
+    return total_loss, total_acc
 
 def train_SNN(
     net : nn.Module,  
     data_loader : DataLoader[tuple[th.Tensor, th.Tensor]],
-    num_epochs : int = 10
+    num_epochs : int = 10,
+    attack : bool = False
           ) -> None : 
+    
     T = 20
     encoder = encoding.PoissonEncoder()
     for epoch in range(num_epochs):
@@ -121,69 +115,62 @@ def train_SNN(
             optimizer.step()
             total_loss += loss.item()
             pred_target = y_hat.argmax(1)
-            total_acc += (pred_target == target).sum()
+            total_acc += (pred_target == target).sum().item()
             length += len(target)
             functional.reset_net(net)
         loss = total_loss / length
         acc = (total_acc / length) * 100 
         print(f'{epoch + 1} epoch\'s of Loss : {loss}, accuracy rate : {acc}')
-        
+        if (epoch) % 10 == 0:
+            if attack :
+                adv_loss, adv_acc = test_SNN(net, test_loader, attack = True)
+                print(f'adv acc of {epoch+1} : {adv_acc}, and adv loss of {epoch+1} : {adv_loss}')
+            clean_loss, clean_acc = test_SNN(net, test_loader, attack = False)
+            print(f'clean acc of {epoch+1} : {clean_acc}, and clean loss of {epoch+1} : {clean_loss}')
 def test_SNN(
     net : nn.Module,
-    data_loader : DataLoader
+    data_loader : DataLoader[tuple[th.Tensor, th.Tensor]],
+    attack : bool = False
              ) -> Tuple[float, float]: 
     encoder = encoding.PoissonEncoder()
     T = 20
-    total_acc_clean, total_acc_adv = 0, 0
-    total_loss_clean, total_loss_adv = 0, 0
+    total_acc = 0
+    total_loss = 0
     net.eval()
     length = 0
-    with th.no_grad():
-        for i, (data, target) in tqdm(enumerate(iter(data_loader))):
-            data, target = data.to(device), target.to(device)
-            target_onehot = F.one_hot(target, 10).float()
-            y_hat_clean = 0.0
+    for i, (data, target) in tqdm(enumerate(iter(data_loader))):
+        data, target = data.to(device), target.to(device)
+        target_onehot = F.one_hot(target, 10).float()
+        if attack:
+            with th.enable_grad():
+                adv_imgs= generate_adversial_image(net, data, target_onehot)
+            save_image(data,adv_imgs, './images/comparison_image_snn.png', target)
+            data = adv_imgs
+        with th.no_grad():
+            y_hat = 0.0
             for _ in range(T):
-                encode_clean = encoder(data)
-                y_hat_clean += net(encode_clean)
-            y_hat_clean /= T
-            loss_clean = F.mse_loss(y_hat_clean, target_onehot)
-            total_loss_clean += loss_clean.item()
-            pred_target_clean = y_hat_clean.argmax(1)
-            total_acc_clean += (pred_target_clean == target).sum().item()
+                encode = encoder(data)
+                y_hat += net(encode)
+            y_hat /= T
+            loss = F.mse_loss(y_hat, target_onehot)
+            total_loss += loss.item()
+            pred_target = y_hat.argmax(1)
+            total_acc += (pred_target == target).sum().item()
             length += len(target)
-        total_loss_clean /= length
-        total_acc_clean = total_acc_clean / length * 100
-        print(total_loss_clean, total_acc_clean)
-    with th.no_grad():
-        for i, (data, target) in tqdm(enumerate(iter(data_loader))):
-            data, target = data.to(device), target.to(device)
-            adv_imgs = nes(net, data, target, iteration = 10, sample_size= 20)
-            target_onehot = F.one_hot(target, 10).float()
-            y_hat_adv = 0.0
-            for _ in range(T):
-                encode_adv = encoder(adv_imgs)
-                y_hat_adv += net(encode_adv)
-            y_hat_adv /= T
-            save_image(data,adv_imgs, './images/comparison_image_cnn.png', target)
-            loss_adv = F.mse_loss(y_hat_adv, target_onehot)
-            total_loss_adv += loss_adv.item()
-            pred_target_adv = y_hat_adv.argmax(1)
-            total_acc_adv += (pred_target_adv == target).sum().item()
-        total_loss_adv /= length
-        total_acc_adv = total_acc_adv / length * 100
-        print(total_loss_adv, total_acc_adv)
-        loss, acc = total_loss_clean, total_acc_clean
-    return loss, acc
+            functional.reset_net(net)
+        total_loss /= length
+        total_acc = total_acc / length * 100
+    return total_loss, total_acc
 
 
 def train_STDP(
     net : nn.Module,  
-    data_loader : DataLoader,
-    loss_fn,
+    data_loader : DataLoader[tuple[th.Tensor, th.Tensor]],
+    loss_fn : Callable[[th.Tensor, th.Tensor], th.Tensor],
     num_epochs : int = 10
         ) -> None :
-
+    
+    net.train()
     instances_stdp = ( layer.Linear,
                         layer.Conv1d,
                         layer.BatchNorm2d,
@@ -258,41 +245,34 @@ def train_STDP(
 
 def test_STDP(
     net : nn.Module,
-    data_loader : DataLoader, 
-    loss_fn
+    data_loader : DataLoader[tuple[th.Tensor, th.Tensor]], 
+    loss_fn : Callable[[th.Tensor, th.Tensor], th.Tensor],
+    attack : bool = False
              ) -> Tuple[float, float]: 
     net.eval()
     net = net.to(device)
     if th.cuda.device_count() > 1 :
         net = nn.DataParallel(net)
-    total_acc_clean, total_acc_adv = 0, 0
-    total_loss_clean, total_loss_adv = 0, 0
+    total_acc = 0
+    total_loss = 0
     length = 0
     for i, (data, target) in tqdm (enumerate(iter(data_loader))):
         data, target = data.to(device), target.to(device)
         data = data.unsqueeze(0).repeat(20, 1, 1, 1, 1)
-        adv_imgs = nes_stdp(net, data, target, iteration= 5, sample_size=10)
+        if attack:
+            data = nes_stdp(net, data, target, iteration= 5, sample_size=10)
         data, target = Variable(data), Variable(target) 
-        y_hat_clean = net(data).mean(0)
-        y_hat_adv = net(adv_imgs).mean(0)
-        loss_clean = loss_fn(y_hat_clean, target)
-        loss_adv = loss_fn(y_hat_adv, target)
-        total_loss_clean += loss_clean.item()
-        total_loss_adv += loss_adv.item()
-        pred_target_clean = y_hat_clean.argmax(1)
-        pred_target_adv = y_hat_adv.argmax(1)
-        total_acc_clean += (pred_target_clean == target).sum().item()
-        total_acc_adv += (pred_target_adv == target).sum().item()
+        y_hat = net(data).mean(0)
+        loss = loss_fn(y_hat, target)
+        total_loss += loss.item()
+        pred_target = y_hat.argmax(1)
+        total_acc += (pred_target == target).sum().item()
         functional.reset_net(net)
         length += len(target)
-    total_loss_clean /= length
-    total_acc_clean = total_acc_clean / length * 100
-    print(total_loss_clean, total_acc_clean)
-    total_loss_adv /= length
-    total_acc_adv = total_acc_adv / length * 100
-    print(total_loss_adv, total_acc_adv)
-    loss, acc = total_loss_clean, total_acc_clean
-    return loss, acc
+    total_loss /= length
+    total_acc = total_acc / length * 100
+    return total_loss, total_acc
+
 if __name__ == "__main__":
     num_epochs = args.t
     batch_size = 32
@@ -342,7 +322,8 @@ if __name__ == "__main__":
             net = net,
             num_epochs = num_epochs,
             data_loader= train_loader,
-            loss_fn = Loss_function
+            loss_fn = Loss_function,
+            attack = args.attack
             )
     elif args.net == 'SNN':
         if args.dset == 'MNIST':
@@ -353,9 +334,10 @@ if __name__ == "__main__":
         train_SNN(
             net = net,
             num_epochs = num_epochs,
-            data_loader= train_loader
+            data_loader= train_loader,
+            attack = args.attack
             )
-        test_loss, test_acc = test_SNN(net, test_loader)
+
     else:
         if args.dset == 'MNIST':
             net = SNN_STDP().to(device)
@@ -381,11 +363,36 @@ if __name__ == "__main__":
             data_loader = train_loader,
             loss_fn = Loss_function
             )
-        test_loss, test_acc = test_STDP(
+        clean_loss, clean_acc = test_STDP(
+            net = net, 
+            data_loader= test_loader, 
+            loss_fn= Loss_function, 
+            attack = False
+        )
+        adv_loss, adv_acc = test_STDP(
             net = net,
             data_loader = test_loader,
-            loss_fn = Loss_function
+            loss_fn = Loss_function,
+            attack = True
         )
+        # if args.attack :
+        #     adv_loss, adv_acc = test_STDP(
+        #     net = net,
+        #     data_loader = test_loader,
+        #     loss_fn = Loss_function,
+        #     attack = True
+        # )
+        #     print(f'adv loss, adv acc = {adv_loss}, {adv_acc}')
+        # else:
+        #     clean_loss, clean_acc = test_STDP(
+        #     net = net, 
+        #     data_loader= test_loader, 
+        #     loss_fn= Loss_function, 
+        #     attack = False
+        # )
+        #     print(f'clean loss, clean acc = {clean_acc}, {clean_loss}')
+        print(f'clean loss, clean acc = {clean_acc}, {clean_loss}')
+        print(f'adv loss, adv acc = {adv_loss}, {adv_acc}')
     # total_params = sum(p.numel() for p in net.parameters())
     # print(total_params)    
 

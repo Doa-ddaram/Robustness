@@ -171,6 +171,3 @@ cython_debug/
 .pypirc
 
 # Cache
-data/
-model/
-wandb/

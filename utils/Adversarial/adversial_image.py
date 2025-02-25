@@ -1,7 +1,7 @@
 import torch as th
-import torch.nn.functional as F
+import torch.nn as nn
 import matplotlib.pyplot as plt
-
+loss_fn = nn.CrossEntropyLoss()
 def generate_adversial_image(model, image, target, epsilon = 0.1):
     '''
     Method : FGSM
@@ -10,30 +10,18 @@ def generate_adversial_image(model, image, target, epsilon = 0.1):
     param target : target of original image
     param epsilon : adversial intensity
     '''
-    image = image.requires_grad_(True)
-    
+    image = image.detach()
+    image.requires_grad = True
     y_hat = model(image)
-    Loss = F.cross_entropy(y_hat, target)
-    
+    loss = loss_fn(y_hat, target)
     model.zero_grad()
-    Loss.backward()
-    
-    perturbation = epsilon * image.grad.sign()
-    adversarial_image = image + perturbation
-    adversarial_image = th.clamp(adversarial_image, 0, 1.)
-    return adversarial_image.detach()
-
-def display(image, target, adversarial = False):
-    '''
-    param image : image (shape : [1, 28, 28])
-    param target : target of the image
-    param adversarial : image whether adversial
-    '''
-    image = image.squeeze(0)
-    plt.imshow(image.cpu().numpy(), cmap = 'gray')
-    plt.title(f"target:{target.item()} ({'Adversarial' if adversarial else 'Original'})")
-    plt.axis('off')
-    plt.show()
+    loss.backward()
+    grad_sign = image.grad.data.sign
+    if image.grad is None:
+        raise ValueError("Not calculate Gradient")
+    adversarial_image = image + epsilon * grad_sign # image + pertubation
+    adversarial_image = th.clamp(adversarial_image, 0, 1.).detach()
+    return adversarial_image
     
 def save_image(original_image, adversarial_image, filename, target):
     '''
@@ -44,14 +32,14 @@ def save_image(original_image, adversarial_image, filename, target):
     '''
     channel = original_image[0].shape[0]
     if channel == 1 :
-        original_image = original_image[0].squeeze(0).cpu().numpy()
-        adversarial_image = adversarial_image[0].squeeze(0).cpu().numpy()
+        original_image = original_image[0].squeeze(0).detach().cpu().numpy()
+        adversarial_image = adversarial_image[0].squeeze(0).detach().cpu().numpy()
         c = 'gray'
     else:
         original_image = original_image * 0.5 + 0.5
-        original_image = original_image[0].permute(1, 2, 0).cpu().numpy()
+        original_image = original_image[0].permute(1, 2, 0).detach().cpu().numpy()
         adversarial_image = adversarial_image * 0.5 + 0.5
-        adversarial_image = adversarial_image[0].permute(1, 2, 0).cpu().numpy()
+        adversarial_image = adversarial_image[0].permute(1, 2, 0).detach().cpu().numpy()
         c = None
     fig, axes = plt.subplots(1, 2, figsize = (10, 5))
     
