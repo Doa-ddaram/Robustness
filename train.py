@@ -175,10 +175,7 @@ def train_STDP(
     
     net.train()
     instances_stdp = ( layer.Linear,
-                        layer.Conv1d,
-                        layer.BatchNorm2d,
-                        layer.Conv2d,
-                        layer.MaxPool2d,)
+                        layer.Conv2d,)
     stdp_learners = []
     net = net.to(device)
     step_mode = 'm'
@@ -186,17 +183,17 @@ def train_STDP(
     tau_post = 10.
     def f_weight(x):
         return th.clamp(x, -1, 1.)
-    if th.cuda.device_count() > 1 :
-        net = nn.DataParallel(net)
+    # if th.cuda.device_count() > 1 :
+    #     net = nn.DataParallel(net)
     functional.set_step_mode(net, 'm')
     for epoch in range(num_epochs):
         total_loss, total_acc = 0, 0
         length = 0
         for i, (data, target) in tqdm(enumerate(iter(data_loader))):
             data, target = data.to(device), target.to(device)    
-            data, target = Variable(data), Variable(target)
             data = data.unsqueeze(0).repeat(20, 1, 1, 1, 1)
             for i, layers in enumerate(net.children()):
+                print(i, layers)
                 if isinstance(layers, instances_stdp):
                     if i + 2 < len(list(net.children())) :
                         sn_layer = list(net.children())[i+1]
@@ -211,6 +208,7 @@ def train_STDP(
                             f_post = f_weight
                         )
                     )
+            print(stdp_learners)
             parameters_stdp = []
             for module in net.modules():
                 if isinstance(module, instances_stdp):
@@ -231,7 +229,6 @@ def train_STDP(
             optimizer.zero_grad()
 
             loss.backward()
-            print(stdp_learners)
             for i in range(stdp_learners.__len__()):
                 stdp_learners[i].step(on_grad = False)
             optimizer_stdp.step()
@@ -280,7 +277,7 @@ def test_STDP(
 if __name__ == "__main__":
     num_epochs = args.t
     batch_size = 32
-    num_workers = 4
+    num_workers = 2
     learning_rate = 1e-2
     seed = args.seed
     
@@ -348,7 +345,7 @@ if __name__ == "__main__":
             net = SNN_STDP().to(device)
         else :
             net = spiking_vgg.spiking_vgg16(spiking_neuron = neuron.LIFNode, surrogate_function = surrogate.ATan()).to(device)
-        optimizer = th.optim.Adam(net.parameters(), lr = learning_rate)
+
         stdp_learners = []
 
         step_mode = 'm'
