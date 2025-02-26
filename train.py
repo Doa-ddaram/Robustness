@@ -319,9 +319,10 @@ if __name__ == "__main__":
     if args.net == 'CNN':
         if args.dset == 'MNIST':
             net = CNN().to(device)
+            optimizer = th.optim.Adam(net.parameters(), lr = learning_rate)
         else:
             net = vgg16().to(device)
-        optimizer = th.optim.Adam(net.parameters(), lr = learning_rate)
+            optimizer = th.optim.SGD(net.parameters(), lr = learning_rate)
         train_CNN(
             net = net,
             num_epochs = num_epochs,
