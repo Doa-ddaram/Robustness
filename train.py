@@ -17,16 +17,18 @@ from typing import Tuple, Callable
 from torch.autograd import Variable
 import wandb
 
-parser = argparse.ArgumentParser()
+def implement_parser():
+    parser = argparse.ArgumentParser()
 
-parser.add_argument('--net', type = str, help = "Input Model type (CNN or SNN or STDP)")
-parser.add_argument('-t', type = int, help = 'training time step')
-parser.add_argument('--seed', type = int, help = 'fixed random seed')
-parser.add_argument('--dset', type = str, help = 'input dataset.')
+    parser.add_argument('--net', type = str, help = "Input Model such of (CNN or SNN or STDP)")
+    parser.add_argument('-t', type = int, help = 'training time step')
+    parser.add_argument('--seed', type = int, help = 'fixed random seed')
+    parser.add_argument('--dset', type = str, help = 'input dataset.')
 
-parser.add_argument('--attack', action=argparse.BooleanOptionalAction, help = 'enable or disable attack, type = bool')
-args = parser.parse_args()
-
+    parser.add_argument('--attack', action=argparse.BooleanOptionalAction, help = 'enable or disable attack, type = bool')
+    parser.add_argument('--epsilon', type = float, default = None, help = 'if Adv attack, Must be typing. type float')
+    args = parser.parse_args()
+    return args
 def train_CNN(
     net : nn.Module,  
     data_loader : DataLoader[tuple[th.Tensor, th.Tensor]],
@@ -44,7 +46,7 @@ def train_CNN(
             optimizer.step()
             total_loss += loss.item()
             pred_target = y_hat.argmax(1)
-            total_acc += (pred_target == target).sum()
+            total_acc += (pred_target == target).sum().item()
             length += len(target)
         loss = total_loss / length
         acc = (total_acc / length) * 100
@@ -54,7 +56,8 @@ def test_CNN(
     net : nn.Module,
     data_loader : DataLoader[tuple[th.Tensor, th.Tensor]], 
     loss_fn : Callable[[th.Tensor, th.Tensor], th.Tensor],
-    attack : bool = False
+    attack : bool = False,
+    epsilon : float = 0.05
              ) -> Tuple[float, float]: 
     total_acc = 0
     total_loss = 0
@@ -63,7 +66,7 @@ def test_CNN(
     for i, (data, target) in tqdm(enumerate(iter(data_loader))):
         data, target = data.to(device), target.to(device)
         if attack :
-            adv_imgs= generate_adversial_image(net, data, target, epsilon = 0.5)
+            adv_imgs= generate_adversial_image(net, data, target, epsilon = epsilon)
             save_image(data,adv_imgs, './images/comparison_image_cnn.png', target)
             data = adv_imgs
         with th.no_grad():
@@ -110,7 +113,8 @@ def train_SNN(
 def test_SNN(
     net : nn.Module,
     data_loader : DataLoader[tuple[th.Tensor, th.Tensor]],
-    attack : bool = False
+    attack : bool = False,
+    epsilon : float = 0.05
              ) -> Tuple[float, float]: 
     encoder = encoding.PoissonEncoder()
     T = 20
@@ -120,13 +124,12 @@ def test_SNN(
     length = 0
     for i, (data, target) in tqdm(enumerate(iter(data_loader))):
         data, target = data.to(device), target.to(device)
-        print(data.shape)
         target_onehot = F.one_hot(target, 10).float()
         was_training = net.training
         net.train()
         if attack:
             with th.enable_grad():
-                adv_imgs= generate_adversial_image(net, data, target, epsilon = 0.5)
+                adv_imgs= generate_adversial_image(net, data, target, epsilon = epsilon)
             save_image(data, adv_imgs, './images/comparison_image_snn.png', target)
             data = adv_imgs
         net.train(was_training)
@@ -134,7 +137,6 @@ def test_SNN(
             y_hat = 0.0
             for _ in range(T):
                 encode = encoder(data)
-                print(y_hat.shape)
                 y_hat += net(encode)
             y_hat /= T
             loss = F.mse_loss(y_hat, target_onehot)
@@ -216,7 +218,7 @@ def train_STDP(
             stdp_learners[i].reset()
         total_loss += loss.item()
         pred_target = y_hat.argmax(1)
-        total_acc += (pred_target == target).sum()
+        total_acc += (pred_target == target).sum().item()
         length += len(target)
     loss = total_loss / length
     acc = (total_acc / length) * 100 
@@ -226,7 +228,8 @@ def test_STDP(
     net : nn.Module,
     data_loader : DataLoader[tuple[th.Tensor, th.Tensor]], 
     loss_fn : Callable[[th.Tensor, th.Tensor], th.Tensor],
-    attack : bool = False
+    attack : bool = False,
+    epsilon : float = 0.05
              ) -> Tuple[float, float]: 
     net.eval()
     net = net.to(device)
@@ -242,7 +245,7 @@ def test_STDP(
             was_training = net.training
             net.train()
             with th.enable_grad():
-                data = generate_adversial_image_stdp(net, data, target)
+                data = generate_adversial_image(net, data, target, epsilon = epsilon)
             if not was_training:
                 net.eval()
         data, target = Variable(data), Variable(target) 
@@ -258,6 +261,7 @@ def test_STDP(
     return total_loss, total_acc
 
 if __name__ == "__main__":
+    args = implement_parser()
     num_epochs = args.t
     batch_size = 32
     num_workers = 4
@@ -340,13 +344,16 @@ if __name__ == "__main__":
                     step = epoch
                     )
             print(f'{epoch + 1} epoch\'s of Loss : {loss}, accuracy rate : {acc}')
+            # evaluate_adversarial(net, test_loader, device, epsilon = 0.05)
             if (epoch+ 1) % 10 == 0:
                 if attack :
                     adv_loss, adv_acc = test_CNN(
                         net = net, 
                         data_loader=test_loader, 
                         loss_fn = Loss_function, 
-                        attack = True)
+                        attack = True,
+                        epsilon = args.epsilon
+                        )
                     wandb.log({
                         "attack loss" : adv_loss,
                         "attack acc" : adv_acc   
@@ -384,12 +391,14 @@ if __name__ == "__main__":
                     step = epoch
                     )
             print(f'{epoch + 1} epoch\'s of Loss : {loss}, accuracy rate : {acc}')
-            if (epoch) % 10 == 0:
+            if (epoch + 1) % 10 == 0:
                 if attack :
                     adv_loss, adv_acc = test_SNN(
                         net = net, 
                         data_loader=test_loader,  
-                        attack = True)
+                        attack = True,
+                        epsilon = args.epsilon
+                        )
                     wandb.log({
                         "attack loss" : adv_loss,
                         "attack acc" : adv_acc   
@@ -431,7 +440,9 @@ if __name__ == "__main__":
                         net = net, 
                         data_loader = test_loader,
                         loss_fn = Loss_function,
-                        attack = True)
+                        attack = True,
+                        epsilon = args.epsilon
+                        )
                     wandb.log({
                         "attack loss" : adv_loss,
                         "attack acc" : adv_acc   

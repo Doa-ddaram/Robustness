@@ -10,35 +10,17 @@ def generate_adversial_image(model, image, target, epsilon = 0.05):
     param epsilon : adversial intensity
     '''
     image.requires_grad = True
-    y_hat = model(image)
+    print(model, type(model))
+    if model == 'STDP':
+        image = image.to(th.device("cuda:0"))
+        image = image.clone().detach().to(th.device("cuda:0"))
+        y_hat = model(image).mean(0)
+    else:
+        y_hat = model(image)
     loss = F.cross_entropy(y_hat, target)
     model.zero_grad()
     loss.backward()
     grad_sign = image.grad.sign()
-    if image.grad is None:
-        raise ValueError("Not calculate Gradient")
-    adversarial_image = image + epsilon * grad_sign # image + pertubation
-    adversarial_image = th.clamp(adversarial_image, 0, 1).detach()
-    return adversarial_image
-
-def generate_adversial_image_stdp(model, image, target, epsilon = 0.05):
-    '''
-    Method : FGSM
-    param model : trained model
-    param image : original image (shape : [time, 1, 28, 28])
-    param target : target of original image
-    param epsilon : adversial intensity
-    '''
-    image = image.to(th.device("cuda:0"))
-    image = image.clone().detach().to(th.device("cuda:0"))
-    image.requires_grad = True
-    y_hat = model(image).mean(0)
-    loss = F.cross_entropy(y_hat, target)
-    model.zero_grad()
-    loss.backward()
-    grad_sign = image.grad.sign()
-    if image.grad is None:
-        raise ValueError("Not calculate Gradient")
     adversarial_image = image + epsilon * grad_sign # image + pertubation
     adversarial_image = th.clamp(adversarial_image, 0, 1).detach()
     return adversarial_image
@@ -75,129 +57,111 @@ def save_image(original_image, adversarial_image, filename, target):
     plt.savefig(filename)
     plt.close()
     
-'''
-Not yet, implementling hardly under this codes.
-'''
+def compute_norm_differences(orig: th.Tensor, adv: th.Tensor):
+    '''
+    :param orig: origin image (B, C, H, W)
+    :param adv:  adv example (B, C, H, W)
+    :return: (mean_l2, mean_linf)
+    '''
+    # norm calculate
+    diff = adv - orig
+    # L2 norm (each sample)
+    l2 = diff.view(diff.size(0), -1).norm(p=2, dim=1)  # (B,)
+    # Linf norm (each sample)
+    linf = diff.view(diff.size(0), -1).norm(p=float('inf'), dim=1)  # (B,)
 
-def BIM(model, images, labels, epsilon, alpha, num_steps):
-    images = images.clone().detach().requires_grad_(True)
+    # batch all avg
+    return l2.mean().item(), linf.mean().item()
 
-    for _ in range(num_steps):
-        # Forward pass
-        outputs = model(images)
+def compute_confidence(model, images: th.Tensor, labels: th.Tensor):
+    """
+    :param model: net
+    :param images: iknput image (B, C, H, W)
+    :param labels: label (B,)
+    :return: avg confidence
+    """
+    with th.no_grad():
+        logits = model(images)
+        probs = F.softmax(logits, dim=1)
+        conf = probs[th.arange(len(labels)), labels]
+    return conf.mean().item()
+
+def compute_attack_success_rate(model, adv: th.Tensor, labels: th.Tensor):
+    """
+    :param model: net
+    :param adv: adv example (B, C, H, W)
+    :param labels: origin label (B,)
+    :return: adv success (0.0 ~ 1.0)
+    """
+    with th.no_grad():
+        preds = model(adv).argmax(dim=1)
+    # 
+    incorrect = (preds != labels).sum().item()
+    return incorrect / len(labels)
+
+def evaluate_adversarial(model, data_loader, device, epsilon=0.1, loss_fn=None):
+    """
+    :param model: net
+    :param data_loader: data_loader
+    :param device: 'cuda'
+    :param epsilon: FGSM intensity
+    :param loss_fn: Loss function
+    """
+    if loss_fn is None:
+        loss_fn = th.nn.CrossEntropyLoss()
+
+    model.eval()
+
+    total_l2, total_linf = 0.0, 0.0
+    total_attack_success = 0.0
+    total_samples = 0
+
+    total_conf_orig, total_conf_adv = 0.0, 0.0
+
+    for data, target in data_loader:
+        data, target = data.to(device), target.to(device)
+
+        # 1)
+        conf_orig = compute_confidence(model, data, target)
+
+        # 2) 
+        data.requires_grad = True
+        output = model(data)
+        loss = loss_fn(output, target)
         model.zero_grad()
-        
-        # Calculate loss
-        loss = F.nll_loss(F.log_softmax(outputs, dim=1), labels)
-        
-        # Backward pass
         loss.backward()
-        
-        # Apply gradient sign update
-        with torch.no_grad():
-            images = images + alpha * images.grad.sign()
-            images = torch.clamp(images, 0, 1)  # Ensure pixel values are within [0, 1]
-            images = images.detach().requires_grad_(True)
 
-    return images
+        data_grad = data.grad.data
+        adv_data = data + epsilon * data_grad.sign()
+        adv_data = th.clamp(adv_data, 0, 1)
 
-def PGD(model, images, labels, epsilon, alpha, num_steps):
-    images = images.clone().detach().requires_grad_(True)
-    
-    # Random initialization of perturbations within epsilon bounds
-    delta = torch.zeros_like(images).uniform_(-epsilon, epsilon)
-    images = images + delta
-    
-    for _ in range(num_steps):
-        outputs = model(images)
-        model.zero_grad()
-        
-        loss = F.nll_loss(F.log_softmax(outputs, dim=1), labels)
-        loss.backward()
-        
-        with torch.no_grad():
-            # Apply the gradient-based update
-            delta = alpha * images.grad.sign()
-            images = images + delta
-            # Project the perturbations back to the epsilon-ball around the original image
-            images = torch.clamp(images, 0, 1)
-            images = torch.min(torch.max(images, images - epsilon), images + epsilon)
-            images = images.detach().requires_grad_(True)
-    
-    return images
+        # 3) 
+        conf_adv = compute_confidence(model, adv_data, target)
 
-def CW(model, images, labels, epsilon=0.1, c=1e-4, num_iterations=1000):
-    images = images.clone().detach().requires_grad_(True)
-    
-    # Initialize the perturbations
-    perturbation = torch.zeros_like(images, requires_grad=True)
-    
-    # Set optimizer for the perturbation
-    optimizer = torch.optim.Adam([perturbation], lr=0.01)
-    
-    for i in range(num_iterations):
-        optimizer.zero_grad()
-        
-        # Apply perturbation to the image
-        perturbed_images = torch.clamp(images + perturbation, 0, 1)
-        
-        # Get model predictions
-        outputs = model(perturbed_images)
-        
-        # Define the loss as the difference between the true label and the model prediction
-        loss = F.cross_entropy(outputs, labels)
-        
-        # Regularization term to make perturbation small
-        loss += c * torch.sum(perturbation ** 2)
-        
-        # Backpropagate the loss and update perturbation
-        loss.backward()
-        optimizer.step()
-        
-        # Ensure perturbations remain within a valid range
-        with torch.no_grad():
-            perturbation.data = torch.clamp(perturbation.data, -epsilon, epsilon)
-    
-    return torch.clamp(images + perturbation, 0, 1)
+        # 4)
+        l2, linf = compute_norm_differences(data, adv_data)
 
+        # 5) 
+        asr = compute_attack_success_rate(model, adv_data, target)
 
-def deepfool(model, image, label, max_iter=50, overshoot=0.02):
-    image = image.clone().detach().requires_grad_(True)
-    original_image = image.clone().detach()
-    
-    output = model(image)
-    _, predicted = torch.max(output.data, 1)
-    
-    # If the model already misclassifies the image, return it directly
-    if predicted != label:
-        return image
-    
-    # Loop until we either exceed max iterations or successfully fool the model
-    for _ in range(max_iter):
-        output = model(image)
-        _, predicted = torch.max(output.data, 1)
-        
-        if predicted != label:
-            break
-        
-        # Calculate the gradients
-        output[0, predicted].backward(retain_graph=True)
-        image_grad = image.grad.data
-        
-        # Calculate the perturbation
-        perturbation = -output[0, predicted].grad * image_grad
-        perturbation = perturbation / torch.norm(perturbation, p=2)
-        
-        # Apply the perturbation and adjust the image
-        image = image + (1 + overshoot) * perturbation
-        
-        # Ensure pixel values stay in the valid range
-        image = torch.clamp(image, 0, 1)
-        
-    return image
+        batch_size = data.size(0)
+        total_l2 += l2 * batch_size
+        total_linf += linf * batch_size
+        total_conf_orig += conf_orig * batch_size
+        total_conf_adv += conf_adv * batch_size
+        total_attack_success += asr * batch_size
+        total_samples += batch_size
 
-def SimBA(model, dataset, image_size):
-    batch_size = 32
-    dataset_image_size = 28 * 28
-    assert image_size == dataset_image_size
-    
+    # 
+    mean_l2 = total_l2 / total_samples
+    mean_linf = total_linf / total_samples
+    mean_asr = total_attack_success / total_samples
+    mean_conf_orig = total_conf_orig / total_samples
+    mean_conf_adv = total_conf_adv / total_samples
+
+    print(f"FGSM (epsilon = {epsilon}) evaluate result")
+    print(f"  - avg L2 norm difference   : {mean_l2:.4f}")
+    print(f"  - adv Linf norm difference   : {mean_linf:.4f}")
+    print(f"  - adv success(ASR)    : {mean_asr*100:.2f}%")
+    print(f"  - ori avg confidence : {mean_conf_orig:.4f}")
+    print(f"  - adv avg confidence : {mean_conf_adv:.4f}")
