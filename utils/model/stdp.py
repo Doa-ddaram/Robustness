@@ -4,24 +4,22 @@ from ..spikingjelly.spikingjelly.activation_based import layer, neuron, surrogat
 class SNN_STDP(nn.Module):
     def __init__(self):
         super(SNN_STDP, self).__init__()
-        self.conv1 = layer.Conv2d(1, 32, kernel_size = 3, stride = 1, padding = 1)
-        self.sn1 = neuron.IFNode()
-        self.pool = layer.MaxPool2d(kernel_size = 2, stride = 2)
-        self.conv2 = layer.Conv2d(32, 64, kernel_size = 3, stride = 1, padding = 1)
-        self.sn2 = neuron.IFNode()
+        self.layer1 = nn.Sequential(
+            layer.Conv2d(1, 32, kernel_size = 3, stride = 1, padding = 1),
+            neuron.LIFNode(tau = 2.0, surrogate_function = surrogate.ATan()),
+            layer.MaxPool2d(kernel_size = 2, stride = 2)
+        )
+        self.layer2 = nn.Sequential(
+            layer.Conv2d(32, 64, kernel_size = 3, stride = 1, padding = 1),
+            neuron.LIFNode(tau = 2.0, surrogate_function = surrogate.ATan()),
+            layer.MaxPool2d(kernel_size = 2, stride = 2)
+        )
         self.linear1 = layer.Linear(in_features=7 * 7 * 64, out_features=10, bias=False)
-        self.sn3 = neuron.IFNode()
-        
     def forward(self, x):
-        x = self.conv1(x)
-        x = self.sn1(x)
-        x = self.pool(x)
-        x = self.conv2(x)
-        x = self.sn2(x)
-        x = self.pool(x)
-        x = x.view(x.size(0),x.size(1), -1)
+        x = self.layer1(x)
+        x = self.layer2(x)
+        x = x.view(x.size(0), x.size(1), -1)
         x = self.linear1(x)
-        x = self.sn3(x)
         return x
     
 class SNN_STDP_VGG(nn.Module):

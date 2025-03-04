@@ -1,0 +1,63 @@
+{
+  "os":  "Linux-6.2.0-26-generic-x86_64-with-glibc2.35",
+  "python":  "CPython 3.10.16",
+  "startedAt":  "2025-03-04T11:09:04.234022Z",
+  "args":  [
+    "--net",
+    "STDP",
+    "-t",
+    "50",
+    "--seed",
+    "0",
+    "--dset",
+    "MNIST",
+    "--attack"
+  ],
+  "program":  "-m train",
+  "git":  {
+    "remote":  "https://github.com/doa-ddaram/Robustness.git",
+    "commit":  "58eead399f7168d5252dc6756bbc3e73fe34dcb9"
+  },
+  "email":  "sqoml123@naver.com",
+  "root":  "/data/KCC2025",
+  "host":  "wonmo",
+  "executable":  "/opt/conda/envs/KCC/bin/python",
+  "cpu_count":  40,
+  "cpu_count_logical":  80,
+  "gpu":  "NVIDIA RTX A6000",
+  "gpu_count":  3,
+  "disk":  {
+    "/":  {
+      "total":  "1967317549056",
+      "used":  "488844312576"
+    }
+  },
+  "memory":  {
+    "total":  "540608507904"
+  },
+  "cpu":  {
+    "count":  40,
+    "countLogical":  80
+  },
+  "gpu_nvidia":  [
+    {
+      "name":  "NVIDIA RTX A6000",
+      "memoryTotal":  "51527024640",
+      "cudaCores":  10752,
+      "architecture":  "Ampere"
+    },
+    {
+      "name":  "NVIDIA RTX A6000",
+      "memoryTotal":  "51527024640",
+      "cudaCores":  10752,
+      "architecture":  "Ampere"
+    },
+    {
+      "name":  "NVIDIA RTX A6000",
+      "memoryTotal":  "51527024640",
+      "cudaCores":  10752,
+      "architecture":  "Ampere"
+    }
+  ],
+  "cudaVersion":  "12.2"
+}

@@ -1,7 +1,7 @@
 import torch as th
 import torch.nn.functional as F
 import matplotlib.pyplot as plt
-def generate_adversial_image(model, image, target, epsilon = 0.1):
+def generate_adversial_image(model, image, target, epsilon = 0.05):
     '''
     Method : FGSM
     param model : trained model
@@ -11,6 +11,28 @@ def generate_adversial_image(model, image, target, epsilon = 0.1):
     '''
     image.requires_grad = True
     y_hat = model(image)
+    loss = F.cross_entropy(y_hat, target)
+    model.zero_grad()
+    loss.backward()
+    grad_sign = image.grad.sign()
+    if image.grad is None:
+        raise ValueError("Not calculate Gradient")
+    adversarial_image = image + epsilon * grad_sign # image + pertubation
+    adversarial_image = th.clamp(adversarial_image, 0, 1).detach()
+    return adversarial_image
+
+def generate_adversial_image_stdp(model, image, target, epsilon = 0.05):
+    '''
+    Method : FGSM
+    param model : trained model
+    param image : original image (shape : [time, 1, 28, 28])
+    param target : target of original image
+    param epsilon : adversial intensity
+    '''
+    image = image.to(th.device("cuda:0"))
+    image = image.clone().detach().to(th.device("cuda:0"))
+    image.requires_grad = True
+    y_hat = model(image).mean(0)
     loss = F.cross_entropy(y_hat, target)
     model.zero_grad()
     loss.backward()
