@@ -29,6 +29,7 @@ def implement_parser():
     parser.add_argument('--epsilon', type = float, default = None, help = 'if Adv attack, Must be typing. type float')
     args = parser.parse_args()
     return args
+
 def train_CNN(
     net : nn.Module,  
     data_loader : DataLoader[tuple[th.Tensor, th.Tensor]],
@@ -67,7 +68,7 @@ def test_CNN(
         data, target = data.to(device), target.to(device)
         if attack :
             adv_imgs= generate_adversial_image(net, data, target, epsilon = epsilon)
-            save_image(data,adv_imgs, './images/comparison_image_cnn.png', target)
+            save_image(data,adv_imgs, f'./images/comparison_image_{args.net}_{args.dset}.png', target)
             data = adv_imgs
         with th.no_grad():
             y_hat = net(data)
@@ -85,6 +86,8 @@ def train_SNN(
     data_loader : DataLoader[tuple[th.Tensor, th.Tensor]]
           ) -> None : 
     T = 20
+    if th.cuda.device_count() > 1 :
+        net = nn.DataParallel(net)
     encoder = encoding.PoissonEncoder()
     total_loss, total_acc = 0, 0
     net.train()
@@ -118,6 +121,8 @@ def test_SNN(
              ) -> Tuple[float, float]: 
     encoder = encoding.PoissonEncoder()
     T = 20
+    if th.cuda.device_count() > 1 :
+        net = nn.DataParallel(net)
     total_acc = 0
     total_loss = 0
     net.eval()
@@ -130,7 +135,7 @@ def test_SNN(
         if attack:
             with th.enable_grad():
                 adv_imgs= generate_adversial_image(net, data, target, epsilon = epsilon)
-            save_image(data, adv_imgs, './images/comparison_image_snn.png', target)
+            save_image(data, adv_imgs, f'./images/comparison_image_{args.net}_{args.dset}.png', target)
             data = adv_imgs
         net.train(was_training)
         with th.no_grad():
@@ -230,7 +235,8 @@ def test_STDP(
     loss_fn : Callable[[th.Tensor, th.Tensor], th.Tensor],
     attack : bool = False,
     epsilon : float = 0.05
-             ) -> Tuple[float, float]: 
+             ) -> Tuple[float, float]:
+    T = 20
     net.eval()
     net = net.to(device)
     if th.cuda.device_count() > 1 :
@@ -240,12 +246,14 @@ def test_STDP(
     length = 0
     for i, (data, target) in tqdm (enumerate(iter(data_loader))):
         data, target = data.to(device), target.to(device)
-        data = data.unsqueeze(0).repeat(20, 1, 1, 1, 1)
+        data = data.unsqueeze(0).repeat(T, 1, 1, 1, 1)
         if attack:
             was_training = net.training
             net.train()
             with th.enable_grad():
-                data = generate_adversial_image(net, data, target, epsilon = epsilon)
+                adv_imgs = generate_adversial_image(net, data, target, epsilon = epsilon)
+            save_image(data.mean(0), adv_imgs.mean(0), f'./images/comparison_image_{args.net}_{args.dset}.png', target)
+            data = adv_imgs
             if not was_training:
                 net.eval()
         data, target = Variable(data), Variable(target) 
@@ -298,8 +306,8 @@ if __name__ == "__main__":
     
     else:
         transform = transforms.Compose([
-            transforms.RandomHorizontalFlip(),
-            transforms.RandomCrop(32, padding = 2),
+            # transforms.RandomHorizontalFlip(),
+            # transforms.RandomCrop(32, padding = 2),
             transforms.ToTensor(),
             transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
         ])
@@ -344,7 +352,6 @@ if __name__ == "__main__":
                     step = epoch
                     )
             print(f'{epoch + 1} epoch\'s of Loss : {loss}, accuracy rate : {acc}')
-            # evaluate_adversarial(net, test_loader, device, epsilon = 0.05)
             if (epoch+ 1) % 10 == 0:
                 if attack :
                     adv_loss, adv_acc = test_CNN(
@@ -416,6 +423,7 @@ if __name__ == "__main__":
                 },
                     step = epoch
                     )
+                print(f'clean acc of {epoch+1} : {clean_acc}, and clean loss of {epoch+1} : {clean_loss}')
     else:
         if args.dset == 'MNIST':
             net = SNN_STDP().to(device)

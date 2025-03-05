@@ -1,6 +1,8 @@
 import torch as th
 import torch.nn.functional as F
 import matplotlib.pyplot as plt
+import torch.nn as nn
+
 def generate_adversial_image(model, image, target, epsilon = 0.05):
     '''
     Method : FGSM
@@ -9,13 +11,13 @@ def generate_adversial_image(model, image, target, epsilon = 0.05):
     param target : target of original image
     param epsilon : adversial intensity
     '''
-    image.requires_grad = True
-    print(model, type(model))
-    if model == 'STDP':
-        image = image.to(th.device("cuda:0"))
+
+    if isinstance(model, nn.DataParallel):
         image = image.clone().detach().to(th.device("cuda:0"))
+        image.requires_grad = True
         y_hat = model(image).mean(0)
     else:
+        image.requires_grad = True
         y_hat = model(image)
     loss = F.cross_entropy(y_hat, target)
     model.zero_grad()
@@ -27,30 +29,33 @@ def generate_adversial_image(model, image, target, epsilon = 0.05):
     
 def save_image(original_image, adversarial_image, filename, target):
     '''
-    param original_image : original_image (shape : [1, 28, 28])
-    param adversarial_image : adversarial_image (shape : [1, 28, 28])
+    param original_image : original_image (shape : [batch_size, 1, 28, 28])
+    param adversarial_image : adversarial_image (shape : [batch_size, 1, 28, 28])
     param filename : saved file name
     param target : target of the image
     '''
-    channel = original_image[0].shape[0]
+    import random
+    r = random.randint(0, len(original_image) - 1)
+    
+    channel = original_image[r].shape[0]
     if channel == 1 :
-        original_image = original_image[0].squeeze(0).detach().cpu().numpy()
-        adversarial_image = adversarial_image[0].squeeze(0).detach().cpu().numpy()
+        original_image = original_image[r].squeeze(0).detach().cpu().numpy()
+        adversarial_image = adversarial_image[r].squeeze(0).detach().cpu().numpy()
         c = 'gray'
     else:
         original_image = original_image * 0.5 + 0.5
-        original_image = original_image[0].permute(1, 2, 0).detach().cpu().numpy()
+        original_image = original_image[r].permute(1, 2, 0).detach().cpu().numpy()
         adversarial_image = adversarial_image * 0.5 + 0.5
-        adversarial_image = adversarial_image[0].permute(1, 2, 0).detach().cpu().numpy()
+        adversarial_image = adversarial_image[r].permute(1, 2, 0).detach().cpu().numpy()
         c = None
     fig, axes = plt.subplots(1, 2, figsize = (10, 5))
     
     axes[0].imshow(original_image, cmap = c)
-    axes[0].set_title(f"Original\nLabel: {target[0].item()}")
+    axes[0].set_title(f"Original\nLabel: {target[r].item()}")
     axes[0].axis('off')
     
     axes[1].imshow(adversarial_image, cmap = c)
-    axes[1].set_title(f"adversarial\nLabel: {target[0].item()}")
+    axes[1].set_title(f"adversarial\nLabel: {target[r].item()}")
     axes[1].axis('off')
     
     plt.tight_layout()
