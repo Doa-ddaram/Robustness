@@ -5,8 +5,8 @@ from torch.utils.data import DataLoader
 import torchvision.transforms as transforms
 from torchvision.models import vgg16
 from torchvision.datasets import MNIST, CIFAR10
-from utils.model.cnn import CNN,VGG, make_layers
-from utils.model.snn import SNN, SNN_VGG
+from utils.model.cnn import CNN,VGG, make_layers_CNN
+from utils.model.snn import SNN, SNN_VGG, make_layers_SNN
 from utils.model.stdp import SNN_STDP
 from tqdm.auto import tqdm
 import argparse
@@ -393,7 +393,13 @@ if __name__ == "__main__":
         if args.dset == 'MNIST':
             net = SNN().to(device)
         else:
-            net = spiking_vgg.spiking_vgg16(num_classes = 10, spiking_neuron = neuron.LIFNode, surrogate_function = surrogate.ATan()).to(device)
+            cfg_vgg16 = [64, 64, 'M', 
+             128, 128, 'M', 
+             256, 256, 256, 'M', 
+             512, 512, 512, 'M', 
+             512, 512, 512, 'M']
+            net = SNN_VGG(make_layers_SNN(cfg_vgg16, batch_norm=False)).to(device)
+            #net = spiking_vgg.spiking_vgg11(num_classes = 10, spiking_neuron = neuron.LIFNode, surrogate_function = surrogate.ATan()).to(device)
         optimizer = th.optim.Adam(net.parameters(), lr = learning_rate)
         for epoch in range(num_epochs):
             loss, acc = train_SNN(

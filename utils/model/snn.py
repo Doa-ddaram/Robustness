@@ -64,7 +64,7 @@ class SNN(nn.Module):
 #         x = self.linear2(x)
 #         return x
 
-def make_layers(cfg : List, batch_norm : bool = False) : 
+def make_layers_SNN(cfg : List, batch_norm : bool = False) : 
     layers = []
     in_channels = 3
     for v in cfg:

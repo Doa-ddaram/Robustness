@@ -25,7 +25,7 @@ class CNN(nn.Module):
         x = self.linear(x)
         return x
     
-def make_layers(cfg : List, batch_norm : bool = False) : 
+def make_layers_CNN(cfg : List, batch_norm : bool = False) : 
     layers = []
     in_channels = 3
     for v in cfg:
