@@ -340,6 +340,7 @@ if __name__ == "__main__":
     wandb.init(project = args.dset, config = config, name = args.dset + '_' + args.net)
     
     attack = args.attack
+    
     if args.net == 'CNN':
         if args.dset == 'MNIST':
             net = CNN().to(device)
@@ -393,13 +394,13 @@ if __name__ == "__main__":
         if args.dset == 'MNIST':
             net = SNN().to(device)
         else:
-            cfg_vgg16 = [64, 64, 'M', 
-             128, 128, 'M', 
-             256, 256, 256, 'M', 
-             512, 512, 512, 'M', 
-             512, 512, 512, 'M']
-            net = SNN_VGG(make_layers_SNN(cfg_vgg16, batch_norm=False)).to(device)
-            #net = spiking_vgg.spiking_vgg11(num_classes = 10, spiking_neuron = neuron.LIFNode, surrogate_function = surrogate.ATan()).to(device)
+            # cfg_vgg16 = [64, 64, 'M', 
+            #  128, 128, 'M', 
+            #  256, 256, 256, 'M', 
+            #  512, 512, 512, 'M', 
+            #  512, 512, 512, 'M']
+            # net = SNN_VGG(make_layers_SNN(cfg_vgg16, batch_norm=False)).to(device)
+            net = spiking_vgg.spiking_vgg11(num_classes = 10, spiking_neuron = neuron.LIFNode, surrogate_function = surrogate.ATan()).to(device)
         optimizer = th.optim.Adam(net.parameters(), lr = learning_rate)
         for epoch in range(num_epochs):
             loss, acc = train_SNN(
