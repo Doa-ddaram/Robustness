@@ -16,6 +16,8 @@ from utils.Adversarial.adversial_image import *
 from typing import Tuple, Callable
 from torch.autograd import Variable
 import wandb
+import os
+import random
 
 def implement_parser():
     parser = argparse.ArgumentParser()
@@ -26,6 +28,7 @@ def implement_parser():
     parser.add_argument('--dset', type = str, help = 'input dataset.')
 
     parser.add_argument('--attack', action=argparse.BooleanOptionalAction, help = 'enable or disable attack, type = bool')
+    parser.add_argument('--save', action=argparse.BooleanOptionalAction, help = 'Saved')
     parser.add_argument('--epsilon', type = float, default = None, help = 'if Adv attack, Must be typing. type float')
     args = parser.parse_args()
     return args
@@ -33,25 +36,28 @@ def implement_parser():
 def train_CNN(
     net : nn.Module,  
     data_loader : DataLoader[tuple[th.Tensor, th.Tensor]],
-    loss_fn : Callable[[th.Tensor,th.Tensor], th.Tensor]
+    loss_fn : Callable[[th.Tensor,th.Tensor], th.Tensor],
+    save : bool = False
           ) -> None : 
-        total_loss, total_acc = 0, 0
-        net.train()
-        length = 0
-        for i, (data, target) in tqdm(enumerate(iter(data_loader))):
-            data, target = data.to(device), target.to(device)
-            optimizer.zero_grad()
-            y_hat = net(data)
-            loss = loss_fn(y_hat, target)
-            loss.backward()
-            optimizer.step()
-            total_loss += loss.item()
-            pred_target = y_hat.argmax(1)
-            total_acc += (pred_target == target).sum().item()
-            length += len(target)
-        loss = total_loss / length
-        acc = (total_acc / length) * 100
-        return loss, acc
+    total_loss, total_acc = 0, 0
+    net.train()
+    length = 0
+    for i, (data, target) in tqdm(enumerate(iter(data_loader))):
+        data, target = data.to(device), target.to(device)
+        optimizer.zero_grad()
+        y_hat = net(data)
+        loss = loss_fn(y_hat, target)
+        loss.backward()
+        optimizer.step()
+        total_loss += loss.item()
+        pred_target = y_hat.argmax(1)
+        total_acc += (pred_target == target).sum().item()
+        length += len(target)
+    loss = total_loss / length
+    acc = (total_acc / length) * 100
+    if save:
+        th.save(net.state_dict(), f"./saved/{net}_{args.dset}.pt")
+    return loss, acc
                     
 def test_CNN(
     net : nn.Module,
@@ -83,11 +89,10 @@ def test_CNN(
 
 def train_SNN(
     net : nn.Module,  
-    data_loader : DataLoader[tuple[th.Tensor, th.Tensor]]
+    data_loader : DataLoader[tuple[th.Tensor, th.Tensor]],
+    save : bool = False
           ) -> None : 
     T = 20
-    if th.cuda.device_count() > 1 :
-        net = nn.DataParallel(net)
     encoder = encoding.PoissonEncoder()
     total_loss, total_acc = 0, 0
     net.train()
@@ -111,6 +116,8 @@ def train_SNN(
         functional.reset_net(net)
     loss = total_loss / length
     acc = (total_acc / length) * 100 
+    if save:
+        th.save(net.state_dict(), f"./saved/{net}_{args.dset}.pt")
     return loss, acc
             
 def test_SNN(
@@ -121,8 +128,6 @@ def test_SNN(
              ) -> Tuple[float, float]: 
     encoder = encoding.PoissonEncoder()
     T = 20
-    if th.cuda.device_count() > 1 :
-        net = nn.DataParallel(net)
     total_acc = 0
     total_loss = 0
     net.eval()
@@ -157,11 +162,11 @@ def test_SNN(
 def train_STDP(
     net : nn.Module,  
     data_loader : DataLoader[tuple[th.Tensor, th.Tensor]],
-    loss_fn : Callable[[th.Tensor, th.Tensor], th.Tensor]
+    loss_fn : Callable[[th.Tensor, th.Tensor], th.Tensor],
+    save : bool = False
         ) -> None :
     net.train()
-    instances_stdp = (
-                       layer.Conv2d,)
+    instances_stdp = (layer.Conv2d,)
     stdp_learners = []
     net = net.to(device)
     step_mode = 'm'
@@ -169,8 +174,6 @@ def train_STDP(
     tau_post = 10.
     def f_weight(x):
         return th.clamp(x, -1, 1.)
-    if th.cuda.device_count() > 1 :
-        net = nn.DataParallel(net)
     functional.set_step_mode(net, 'm')
     total_loss, total_acc = 0, 0
     length = 0
@@ -226,7 +229,9 @@ def train_STDP(
         total_acc += (pred_target == target).sum().item()
         length += len(target)
     loss = total_loss / length
-    acc = (total_acc / length) * 100 
+    acc = (total_acc / length) * 100
+    if save:
+        th.save(net.state_dict(), f"./saved/{net}_{args.dset}.pt")
     return loss, acc
         
 def test_STDP(
@@ -239,8 +244,6 @@ def test_STDP(
     T = 20
     net.eval()
     net = net.to(device)
-    if th.cuda.device_count() > 1 :
-        net = nn.DataParallel(net)
     total_acc = 0
     total_loss = 0
     length = 0
@@ -275,18 +278,23 @@ if __name__ == "__main__":
     num_workers = 4
     learning_rate = 1e-2
     seed = args.seed
-    
+    save = args.save
+
     th.manual_seed(seed)
+    th.cuda.manual_seed(seed)
     th.cuda.manual_seed_all(seed)
+    th.use_deterministic_algorithms(True)
+    random.seed(seed)
     
     device = th.device("cuda:0" if th.cuda.is_available() else "cpu")
     
     config = {
             'dataset' : args.dset,
             'batch_size' : batch_size,
-            'num_epochs' : args.t,
-            'learning_rate' : 1e-2,
-            'seed' : args.seed
+            'num_epochs' : num_epochs,
+            'learning_rate' : learning_rate,
+            'seed' : seed,
+            'epsilon' : args.epsilon
         }
     
     if args.dset == 'MNIST' :
@@ -339,11 +347,12 @@ if __name__ == "__main__":
         else:
             net = vgg16().to(device)
             optimizer = th.optim.SGD(net.parameters(), lr = learning_rate)
-        for epoch in range(num_epochs):  
+        for epoch in range(num_epochs):
             loss, acc = train_CNN(
                 net = net,
                 data_loader= train_loader,
-                loss_fn = Loss_function
+                loss_fn = Loss_function,
+                save = save
                 )
             wandb.log({
                     "train loss" : loss,
@@ -389,7 +398,8 @@ if __name__ == "__main__":
         for epoch in range(num_epochs):
             loss, acc = train_SNN(
                 net = net,
-                data_loader= train_loader
+                data_loader= train_loader,
+                save = save
                 )
             wandb.log({
                     "train loss" : loss,
@@ -433,7 +443,8 @@ if __name__ == "__main__":
             loss, acc = train_STDP(
                 net = net,
                 data_loader = train_loader,
-                loss_fn = Loss_function
+                loss_fn = Loss_function,
+                save = save
                 )
             wandb.log({
                     "train loss" : loss,

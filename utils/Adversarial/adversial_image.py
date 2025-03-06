@@ -7,7 +7,7 @@ def generate_adversial_image(model, image, target, epsilon = 0.05):
     '''
     Method : FGSM
     param model : trained model
-    param image : original image (shape : [1, 28, 28])
+    param image : original image (shape : [batch_size, 1, 28, 28])
     param target : target of original image
     param epsilon : adversial intensity
     '''
@@ -29,8 +29,8 @@ def generate_adversial_image(model, image, target, epsilon = 0.05):
     
 def save_image(original_image, adversarial_image, filename, target):
     '''
-    param original_image : original_image (shape : [batch_size, 1, 28, 28])
-    param adversarial_image : adversarial_image (shape : [batch_size, 1, 28, 28])
+    param original_image : original_image (shape : [batch_size, 1 or 3, 28, 28])
+    param adversarial_image : adversarial_image (shape : [batch_size, 1 or 3, 28, 28])
     param filename : saved file name
     param target : target of the image
     '''
