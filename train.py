@@ -11,7 +11,7 @@ from utils.model.stdp import SNN_STDP
 from tqdm.auto import tqdm
 import argparse
 from utils.spikingjelly.spikingjelly.activation_based import functional, layer, learning, encoding, neuron, surrogate
-from utils.spikingjelly.spikingjelly.activation_based.model import spiking_vgg
+from utils.spikingjelly.spikingjelly.activation_based.model import spiking_vgg,spiking_resnet
 from utils.Adversarial.adversial_image import *
 from typing import Tuple, Callable
 from torch.autograd import Variable
@@ -169,6 +169,8 @@ def train_STDP(
     instances_stdp = (layer.Conv2d,)
     stdp_learners = []
     net = net.to(device)
+    if th.cuda.device_count() > 1 :
+        net = nn.DataParallel(net)
     step_mode = 'm'
     tau_pre = 2.
     tau_post = 10.
@@ -247,6 +249,8 @@ def test_STDP(
     total_acc = 0
     total_loss = 0
     length = 0
+    if th.cuda.device_count() > 1:
+        net = nn.DataParallel(net)
     for i, (data, target) in tqdm (enumerate(iter(data_loader))):
         data, target = data.to(device), target.to(device)
         data = data.unsqueeze(0).repeat(T, 1, 1, 1, 1)
@@ -283,7 +287,7 @@ if __name__ == "__main__":
     th.manual_seed(seed)
     th.cuda.manual_seed(seed)
     th.cuda.manual_seed_all(seed)
-    th.use_deterministic_algorithms(True)
+    #th.use_deterministic_algorithms(True)
     random.seed(seed)
     
     device = th.device("cuda:0" if th.cuda.is_available() else "cpu")
@@ -393,15 +397,15 @@ if __name__ == "__main__":
     elif args.net == 'SNN':
         if args.dset == 'MNIST':
             net = SNN().to(device)
+            optimizer = th.optim.Adam(net.parameters(), lr = learning_rate)
         else:
-            # cfg_vgg16 = [64, 64, 'M', 
-            #  128, 128, 'M', 
-            #  256, 256, 256, 'M', 
-            #  512, 512, 512, 'M', 
-            #  512, 512, 512, 'M']
-            # net = SNN_VGG(make_layers_SNN(cfg_vgg16, batch_norm=False)).to(device)
-            net = spiking_vgg.spiking_vgg11(num_classes = 10, spiking_neuron = neuron.LIFNode, surrogate_function = surrogate.ATan()).to(device)
-        optimizer = th.optim.Adam(net.parameters(), lr = learning_rate)
+            net = spiking_resnet.spiking_resnet18(
+                pretrained = False,
+                num_classes = 10,
+                spiking_neuron = neuron.LIFNode,
+                surrogate_function = surrogate.ATan(),
+                detach_reset = True).to(device)
+            optimizer = th.optim.SGD(net.parameters(), lr = learning_rate)
         for epoch in range(num_epochs):
             loss, acc = train_SNN(
                 net = net,
@@ -445,7 +449,11 @@ if __name__ == "__main__":
         if args.dset == 'MNIST':
             net = SNN_STDP().to(device)
         else :
-            net = spiking_vgg.spiking_vgg16(num_classes = 10, spiking_neuron = neuron.LIFNode, surrogate_function = surrogate.ATan()).to(device)
+            net = spiking_resnet.spiking_resnet18(
+                pretrained = False,
+                spiking_neuron = neuron.LIFNode,
+                surrogate_function = surrogate.ATan(),
+                detach_reset = True).to(device)
         for epoch in range(num_epochs):
             loss, acc = train_STDP(
                 net = net,
