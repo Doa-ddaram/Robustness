@@ -114,16 +114,6 @@ def train_SNN(
         total_acc += (pred_target == target).sum().item()
         length += len(target)
         linear_weight = net.linear.weight.detach().cpu().numpy()
-        #linear
-        sum_linear = linear_weight.sum(axis=0).reshape(4,28,28).sum(axis = 0)
-        fig, ax = plt.subplots()
-        im = ax.imshow(sum_linear, cmap = 'hot')
-        fig.colorbar(im, ax = ax)
-        ax.set_title("CNN linear Heatmap")
-        wandb.log({
-            "Linear heatmap" : wandb.Image(fig)
-        })
-        plt.close(fig)
         functional.reset_net(net)
     loss = total_loss / length
     acc = (total_acc / length) * 100 
@@ -176,7 +166,7 @@ def train_STDP(
     loss_fn : Callable[[th.Tensor, th.Tensor], th.Tensor],
     save : bool = False
         ) -> None :
-    net.train()
+    net.train() 
     instances_stdp = (layer.Conv2d,)
     stdp_learners = []
     net = net.to(device)
@@ -191,7 +181,8 @@ def train_STDP(
     for i, (data, target) in tqdm(enumerate(iter(data_loader))):
         data, target = data.to(device), target.to(device)    
         data = data.unsqueeze(0).repeat(20, 1, 1, 1, 1)
-        for i, layers in enumerate(net.children()):
+        data, target = Variable(data), Variable(target)
+        for i, layers in enumerate(net.modules()):
             if isinstance(layers, nn.Sequential):
                 for j, layer_in in enumerate(layers):
                     if isinstance(layer_in, neuron.BaseNode):
@@ -214,12 +205,10 @@ def train_STDP(
                 for parameters in module.parameters():
                     parameters_stdp.append(parameters)
         parameters_stdp_set = set(parameters_stdp)
-        
         parameters_gd = []
         for parameters in net.parameters():
             if parameters not in parameters_stdp_set:
                 parameters_gd.append(parameters)
-        
         y_hat = net(data).mean(0)
         loss = loss_fn(y_hat, target)
         optimizer_stdp = th.optim.SGD(parameters_stdp, lr = learning_rate, momentum = 0.)
@@ -239,17 +228,6 @@ def train_STDP(
         pred_target = y_hat.argmax(1)
         total_acc += (pred_target == target).sum().item()
         length += len(target)
-        linear_weight = net.linear.weight.detach().cpu().numpy()
-        #linear
-        sum_linear = linear_weight.sum(axis=0).reshape(4,28,28).sum(axis = 0)
-        fig, ax = plt.subplots()
-        im = ax.imshow(sum_linear, cmap = 'hot')
-        fig.colorbar(im, ax = ax)
-        ax.set_title("CNN linear Heatmap")
-        wandb.log({
-            "Linear heatmap" : wandb.Image(fig)
-        })
-        plt.close(fig)
     loss = total_loss / length
     acc = (total_acc / length) * 100
     if save:
@@ -265,7 +243,7 @@ def test_STDP(
              ) -> Tuple[float, float]:
     T = 20
     net.eval()
-    net = net.to(device)
+    net = net.to(device) 
     total_acc = 0
     total_loss = 0
     length = 0
@@ -500,7 +478,7 @@ if __name__ == "__main__":
             fig, ax = plt.subplots()
             im = ax.imshow(sum_linear, cmap = 'hot')
             fig.colorbar(im, ax = ax)
-            ax.set_title("SNN linear Heatmap")
+            ax.set_title("SNN_STDP linear Heatmap")
             wandb.log({
                     "Linear heatmap" : wandb.Image(fig),
                     "train loss" : loss,
