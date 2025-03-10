@@ -14,12 +14,12 @@ class SNN_STDP(nn.Module):
             neuron.LIFNode(tau = 2.0, surrogate_function = surrogate.ATan()),
             layer.MaxPool2d(kernel_size = 2, stride = 2)
         )
-        self.linear1 = layer.Linear(in_features=7 * 7 * 64, out_features=10, bias=False)
+        self.linear = layer.Linear(in_features=7 * 7 * 64, out_features=10, bias=False)
     def forward(self, x):
         x = self.layer1(x)
         x = self.layer2(x)
         x = x.view(x.size(0), x.size(1), -1)
-        x = self.linear1(x)
+        x = self.linear(x)
         return x
     
 class SNN_STDP_VGG(nn.Module):

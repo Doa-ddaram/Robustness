@@ -113,6 +113,17 @@ def train_SNN(
         pred_target = y_hat.argmax(1)
         total_acc += (pred_target == target).sum().item()
         length += len(target)
+        linear_weight = net.linear.weight.detach().cpu().numpy()
+        #linear
+        sum_linear = linear_weight.sum(axis=0).reshape(4,28,28).sum(axis = 0)
+        fig, ax = plt.subplots()
+        im = ax.imshow(sum_linear, cmap = 'hot')
+        fig.colorbar(im, ax = ax)
+        ax.set_title("CNN linear Heatmap")
+        wandb.log({
+            "Linear heatmap" : wandb.Image(fig)
+        })
+        plt.close(fig)
         functional.reset_net(net)
     loss = total_loss / length
     acc = (total_acc / length) * 100 
@@ -228,6 +239,17 @@ def train_STDP(
         pred_target = y_hat.argmax(1)
         total_acc += (pred_target == target).sum().item()
         length += len(target)
+        linear_weight = net.linear.weight.detach().cpu().numpy()
+        #linear
+        sum_linear = linear_weight.sum(axis=0).reshape(4,28,28).sum(axis = 0)
+        fig, ax = plt.subplots()
+        im = ax.imshow(sum_linear, cmap = 'hot')
+        fig.colorbar(im, ax = ax)
+        ax.set_title("CNN linear Heatmap")
+        wandb.log({
+            "Linear heatmap" : wandb.Image(fig)
+        })
+        plt.close(fig)
     loss = total_loss / length
     acc = (total_acc / length) * 100
     if save:
@@ -337,7 +359,10 @@ if __name__ == "__main__":
     
     Loss_function= nn.CrossEntropyLoss().to(device)
     
-    wandb.init(project = args.dset, config = config, name = args.dset + '_' + args.net)
+    wandb.init(project = args.dset,
+               group = args.net,
+               config = config,
+               name = args.dset + '_' + args.net)
     
     attack = args.attack
     
@@ -355,12 +380,20 @@ if __name__ == "__main__":
                 loss_fn = Loss_function,
                 save = save
                 )
+            linear_weight = net.linear.weight.detach().cpu().numpy()
+            #linear
+            sum_linear = linear_weight.sum(axis=0).reshape(4,28,28).sum(axis = 0)
+            fig, ax = plt.subplots()
+            im = ax.imshow(sum_linear, cmap = 'hot')
+            fig.colorbar(im, ax = ax)
+            ax.set_title("CNN linear Heatmap")
             wandb.log({
+                    "Linear heatmap" : wandb.Image(fig),
                     "train loss" : loss,
                     "train acc" : acc
-                },
-                    step = epoch
+            }, step = epoch
                     )
+            plt.close(fig)
             print(f'{epoch + 1} epoch\'s of Loss : {loss}, accuracy rate : {acc}')
             if (epoch+ 1) % 10 == 0:
                 if attack :
@@ -408,12 +441,20 @@ if __name__ == "__main__":
                 data_loader= train_loader,
                 save = save
                 )
+            linear_weight = net.linear.weight.detach().cpu().numpy()
+            #linear
+            sum_linear = linear_weight.sum(axis=0).reshape(4,28,28).sum(axis = 0)
+            fig, ax = plt.subplots()
+            im = ax.imshow(sum_linear, cmap = 'hot')
+            fig.colorbar(im, ax = ax)
+            ax.set_title("SNN linear Heatmap")
             wandb.log({
+                    "Linear heatmap" : wandb.Image(fig),
                     "train loss" : loss,
                     "train acc" : acc
-                },
-                    step = epoch
+            }, step = epoch
                     )
+            plt.close(fig)
             print(f'{epoch + 1} epoch\'s of Loss : {loss}, accuracy rate : {acc}')
             if (epoch + 1) % 10 == 0:
                 if attack :
@@ -453,12 +494,20 @@ if __name__ == "__main__":
                 loss_fn = Loss_function,
                 save = save
                 )
+            linear_weight = net.linear.weight.detach().cpu().numpy()
+            #linear
+            sum_linear = linear_weight.sum(axis=0).reshape(4,28,28).sum(axis = 0)
+            fig, ax = plt.subplots()
+            im = ax.imshow(sum_linear, cmap = 'hot')
+            fig.colorbar(im, ax = ax)
+            ax.set_title("SNN linear Heatmap")
             wandb.log({
+                    "Linear heatmap" : wandb.Image(fig),
                     "train loss" : loss,
                     "train acc" : acc
-                },
-                    step = epoch
+            }, step = epoch
                     )
+            plt.close(fig)
             print(f'{epoch + 1} epoch\'s of Loss : {loss}, accuracy rate : {acc}')
             if (epoch + 1) % 10 == 0:
                 if attack :
