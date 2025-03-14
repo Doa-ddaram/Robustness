@@ -11,14 +11,9 @@ def generate_adversial_image(model, image, target, epsilon = 0.05):
     param target : target of original image
     param epsilon : adversial intensity
     '''
-
-    if isinstance(model, nn.DataParallel):
-        image = image.clone().detach().to(th.device("cuda:0"))
-        image.requires_grad = True
-        y_hat = model(image).mean(0)
-    else:
-        image.requires_grad = True
-        y_hat = model(image)
+    image = image.clone().detach().to(th.device("cuda:0"))
+    image.requires_grad = True
+    y_hat = model(image).mean(0)
     loss = F.cross_entropy(y_hat, target)
     model.zero_grad()
     loss.backward()

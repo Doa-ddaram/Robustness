@@ -4,8 +4,10 @@ from ..spikingjelly.spikingjelly.activation_based import neuron, surrogate, func
 from typing import List
 
 class SNN(nn.Module):
-    def __init__(self):
+    def __init__(self, T):
         super(SNN, self).__init__()
+        self.T = T
+        
         self.layer1 = nn.Sequential(
             layer.Conv2d(1, 32, kernel_size = 3, stride = 1, padding = 1),
             neuron.LIFNode(tau = 2.0, surrogate_function = surrogate.ATan()),
@@ -16,13 +18,14 @@ class SNN(nn.Module):
             neuron.LIFNode(tau = 2.0, surrogate_function = surrogate.ATan()),
             layer.MaxPool2d(kernel_size = 2, stride = 2)
         )
-        self.linear = nn.Linear(in_features=7 * 7 * 64, out_features=10, bias=False)
-       # functional.set_step_mode(self, step_mode = 'm')
+        self.flatten = layer.Flatten()
+        self.linear = layer.Linear(in_features=7 * 7 * 64, out_features=10, bias=False)
+        functional.set_step_mode(self, step_mode = 'm')
     def forward(self, x):
-        #x = x.unsqueeze(0).repeat(self.T, 1, 1, 1, 1)
+        x = x.unsqueeze(0).repeat(self.T, 1, 1, 1, 1)
         x = self.layer1(x)
         x = self.layer2(x)
-        x = x.view(x.size(0), -1)
+        x = self.flatten(x)
         x = self.linear(x)
         return x
 
