@@ -13,7 +13,9 @@ def generate_adversial_image(model, image, target, epsilon = 0.05):
     '''
     image = image.clone().detach().to(th.device("cuda:0"))
     image.requires_grad = True
-    y_hat = model(image).mean(0)
+    y_hat = model(image)
+    if y_hat.dim() == 3: 
+        y_hat = y_hat.mean(0)
     loss = F.cross_entropy(y_hat, target)
     model.zero_grad()
     loss.backward()

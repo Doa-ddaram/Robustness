@@ -12,7 +12,7 @@ import argparse
 from utils.spikingjelly.spikingjelly.activation_based import functional, layer, learning, encoding, neuron, surrogate
 from utils.spikingjelly.spikingjelly.activation_based.model import spiking_vgg
 from utils.Adversarial.adversial_image import *
-from typing import Tuple, Callable
+from typing import Tuple, Callable, List
 from torch.autograd import Variable
 import wandb
 import os
@@ -115,72 +115,38 @@ def train_SNN(
     return loss, acc
 
 def train_STDP(
-    net : nn.Module,  
+    net : nn.Module,
     data_loader : DataLoader[tuple[th.Tensor, th.Tensor]],
     loss_fn : Callable[[th.Tensor, th.Tensor], th.Tensor],
-    save : bool = False
+    save : bool = False,
         ) -> None :
     net.train()
-    instances_stdp = (layer.Conv2d,)
-    tau_pre = 2.
-    tau_post = 10.
-    net = net.to(device) 
-    def f_weight(x):
-        return th.clamp(x, -1, 1.)
-    total_loss, total_acc = 0, 0
+    total_acc, total_loss = 0, 0
     length = 0
-    step_mode = 'm'
-    stdp_learners = []
-    for j, layers in enumerate(net.modules()):
-        if isinstance(layers, nn.Sequential):
-            for r, layer_in in enumerate(layers):
-                if isinstance(layer_in, neuron.BaseNode):
-                    syn = layers[r-1]
-                    sn_layer = layer_in
-                    stdp_learners.append(
-                        learning.STDPLearner(
-                            step_mode = step_mode,
-                            synapse = syn,
-                            sn = sn_layer,
-                            tau_pre = tau_pre,
-                            tau_post = tau_post,
-                            f_pre = f_weight,
-                            f_post = f_weight
-                        )
-                    )
+    optimizer_stdp = th.optim.SGD(parameters_stdp, lr = learning_rate)
+    optimizer = th.optim.Adam(net.parameters(), lr = learning_rate)
     for i, (data, target) in tqdm(enumerate(iter(data_loader))):
-        data, target = data.to(device), target.to(device)    
-        parameters_stdp = []
-        for module in net.modules():
-            if isinstance(module, instances_stdp):
-                for parameters in module.parameters():
-                    parameters_stdp.append(parameters)
-        parameters_stdp_set = set(parameters_stdp)
-        parameters_gd = []
-        for parameters in net.parameters():
-            if parameters not in parameters_stdp_set:
-                parameters_gd.append(parameters)
-        y_hat = net(data).mean(0)
-        loss = loss_fn(y_hat, target)
-        optimizer_stdp = th.optim.Adam(parameters_stdp, lr = learning_rate)
-        optimizer = th.optim.Adam(net.parameters(), lr = learning_rate)
+        data, target = data.to(device), target.to(device) 
         optimizer_stdp.zero_grad()
         optimizer.zero_grad()
-        for i in range(stdp_learners.__len__()):
-            stdp_learners[i].enable()
+        y_hat = net(data).mean(0)
+        loss = loss_fn(y_hat, target)
         loss.backward()
-        for j in range(stdp_learners.__len__()):
+        for i in range(stdp_learners.__len__()):
             with th.no_grad():
-               stdp_learners[j].step(on_grad = False)
+               stdp_learners[i].step(on_grad = False)
         optimizer_stdp.step()
         optimizer.step()
         functional.reset_net(net)
-        for j in range(stdp_learners.__len__()):
-            stdp_learners[j].reset()
+        for i in range(stdp_learners.__len__()):
+            stdp_learners[i].reset()
         total_loss += loss.item()
         pred_target = y_hat.argmax(1)
         total_acc += (pred_target == target).sum().item()
         length += len(target)
+    import gc
+    gc.collect()
+    th.cuda.empty_cache()
     loss = total_loss / length
     acc = (total_acc / length) * 100
     if save:
@@ -291,7 +257,42 @@ if __name__ == "__main__":
                group = args.net,
                config = config,
                name = args.dset + '_' + args.net)
-    
+    instances_stdp = (layer.Conv2d,)
+    tau_pre = 2.
+    tau_post = 10.
+    def f_weight(x):
+        return th.clamp(x, -1, 1.)
+    step_mode = 'm'
+    stdp_learners = []
+    net = SNN(T = 20).to(device)
+    for i, layers in enumerate(net.modules()):
+        if isinstance(layers, nn.Sequential):
+            for j, layer_in in enumerate(layers):
+                if isinstance(layer_in, neuron.BaseNode):
+                    synapse = layers[j-1]
+                    sn_layer = layer_in
+                    stdp_learners.append(
+                        learning.STDPLearner(
+                            step_mode = step_mode,
+                            synapse = synapse,
+                            sn = sn_layer,
+                            tau_pre = tau_pre,
+                            tau_post = tau_post,
+                            f_pre = f_weight,
+                            f_post = f_weight
+                        )
+                    )   
+    parameters_stdp = []
+    for module in net.modules():
+        if isinstance(module, instances_stdp):
+            for parameters in module.parameters():
+                parameters_stdp.append(parameters)
+    parameters_stdp_set = set(parameters_stdp)
+    parameters_gd = []
+    for parameters in net.parameters():
+        if parameters not in parameters_stdp_set:
+            parameters_gd.append(parameters)
+
     if args.net == 'CNN':
         if args.dset == 'MNIST':
             net = CNN().to(device)
@@ -306,20 +307,6 @@ if __name__ == "__main__":
                 loss_fn = Loss_function,
                 save = save
                 )
-            linear_weight = net.linear.weight.detach().cpu().numpy()
-            #linear
-            sum_linear = linear_weight.sum(axis=0).reshape(4,28,28).sum(axis = 0)
-            fig, ax = plt.subplots()
-            im = ax.imshow(sum_linear, cmap = 'hot')
-            fig.colorbar(im, ax = ax)
-            ax.set_title("CNN linear Heatmap")
-            wandb.log({
-                    "Linear heatmap" : wandb.Image(fig),
-                    "train loss" : loss,
-                    "train acc" : acc
-            }, step = epoch
-                    )
-            plt.close(fig)
             print(f'{epoch + 1} epoch\'s of Loss : {loss}, accuracy rate : {acc}')
             if (epoch+ 1) % 10 == 0:
                 if attack :
@@ -352,10 +339,13 @@ if __name__ == "__main__":
     else:
         if args.dset == 'MNIST':
             net = SNN(T = 20).to(device)
+            optimizer = th.optim.Adam(net.parameters(), lr = learning_rate)
         else:
             #net = SNN_VGG(make_layers_SNN(cfg_vgg16, batch_norm=False)).to(device)
-            net = spiking_vgg.spiking_vgg11(num_classes = 10, spiking_neuron = neuron.LIFNode, surrogate_function = surrogate.ATan()).to(device)
-        optimizer = th.optim.Adam(net.parameters(), lr = learning_rate)
+            net = spiking_vgg.spiking_vgg11(
+                num_classes = 10, spiking_neuron = neuron.LIFNode, 
+                surrogate_function = surrogate.ATan()
+                ).to(device)
         for epoch in range(num_epochs):
             if args.net == 'SNN':
                 loss, acc = train_SNN(
@@ -371,22 +361,22 @@ if __name__ == "__main__":
                     loss_fn = Loss_function,
                     save = save
                     )
-            linear_weight = net.linear.weight.detach().cpu().numpy()
-            #linear
-            sum_linear = linear_weight.sum(axis=0).reshape(4,28,28).sum(axis = 0)
-            fig, ax = plt.subplots()
-            im = ax.imshow(sum_linear, cmap = 'hot')
-            fig.colorbar(im, ax = ax)
-            ax.set_title(f"{args.net} linear Heatmap")
-            wandb.log({
-                    "Linear heatmap" : wandb.Image(fig),
-                    "train loss" : loss,
-                    "train acc" : acc
-            }, step = epoch
-                    )
-            plt.close(fig)
+            # linear_weight = net.linear.weight.detach().cpu().numpy()
+            # #linear
+            # sum_linear = linear_weight.sum(axis=0).reshape(4,28,28).sum(axis = 0)
+            # fig, ax = plt.subplots()
+            # im = ax.imshow(sum_linear, cmap = 'hot')
+            # fig.colorbar(im, ax = ax)
+            # ax.set_title(f"{args.net} linear Heatmap")
+            # wandb.log({
+            #         "Linear heatmap" : wandb.Image(fig),
+            #         "train loss" : loss,
+            #         "train acc" : acc
+            # }, step = epoch
+            #         )
+            # plt.close(fig)
             print(f'{epoch + 1} epoch\'s of Loss : {loss}, accuracy rate : {acc}')
-            if (epoch) % 10 == 0:
+            if (epoch + 1) % 10 == 0:
                 if attack :
                     adv_loss, adv_acc = test_SNN(
                         net = net, 
