@@ -2,6 +2,7 @@ import torch as th
 import torch.nn.functional as F
 import matplotlib.pyplot as plt
 import torch.nn as nn
+from torchvision import transforms
 
 def generate_adversial_image(model, image, target, epsilon = 0.05):
     '''
@@ -21,7 +22,7 @@ def generate_adversial_image(model, image, target, epsilon = 0.05):
     loss.backward()
     grad_sign = image.grad.sign()
     adversarial_image = image + epsilon * grad_sign # image + pertubation
-    adversarial_image = th.clamp(adversarial_image, 0, 1).detach()
+    adversarial_image = th.clamp(adversarial_image, 0, 1)
     return adversarial_image
     
 def save_image(original_image, adversarial_image, filename, target):
@@ -39,21 +40,27 @@ def save_image(original_image, adversarial_image, filename, target):
         original_image = original_image[r].squeeze(0).detach().cpu().numpy()
         adversarial_image = adversarial_image[r].squeeze(0).detach().cpu().numpy()
         c = 'gray'
+        label = list(range(0,10))
     else:
         original_image = original_image * 0.5 + 0.5
         original_image = original_image[r].permute(1, 2, 0).detach().cpu().numpy()
         adversarial_image = adversarial_image * 0.5 + 0.5
         adversarial_image = adversarial_image[r].permute(1, 2, 0).detach().cpu().numpy()
         c = None
-    fig, axes = plt.subplots(1, 2, figsize = (10, 5))
+        label = ['airplane', 'automobile', 'bird', 'cat', 'deer', 'dog', 'frog', 'horse', 'ship', 'truck']
+    fig, axes = plt.subplots(1, 3, figsize = (10, 5))
     
     axes[0].imshow(original_image, cmap = c)
-    axes[0].set_title(f"Original\nLabel: {target[r].item()}")
+    axes[0].set_title(f"Original\nLabel: {label[target[r].item()]}")
     axes[0].axis('off')
     
     axes[1].imshow(adversarial_image, cmap = c)
-    axes[1].set_title(f"adversarial\nLabel: {target[r].item()}")
+    axes[1].set_title(f"adversarial\nLabel: {label[target[r].item()]}")
     axes[1].axis('off')
+    
+    axes[2].imshow(th.abs(adversarial_image - original_image), cmap = c)
+    axes[2].set_title("Peturbation")
+    axes[2].axis('off')
     
     plt.tight_layout()
     plt.savefig(filename)

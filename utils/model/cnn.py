@@ -1,6 +1,6 @@
 import torch as th
 import torch.nn as nn
-from typing import Callable,List
+from typing import Callable,List,Dict, Union, Any
 
 class CNN(nn.Module):
     def __init__(self):
@@ -41,22 +41,36 @@ def make_layers_CNN(cfg : List, batch_norm : bool = False) :
             
     return nn.Sequential(*layers)
 
+cfgs: Dict[str, List[Union[str, int]]] = {
+    "A": [64, "M", 128, "M", 256, 256, "M", 512, 512, "M", 512, 512, "M"],
+    "B": [64, 64, "M", 128, 128, "M", 256, 256, "M", 512, 512, "M", 512, 512, "M"],
+    "D": [64, 64, "M", 128, 128, "M", 256, 256, 256, "M", 512, 512, 512, "M", 512, 512, 512, "M"],
+    "E": [64, 64, "M", 128, 128, "M", 256, 256, 256, 256, "M", 512, 512, 512, 512, "M", 512, 512, 512, 512, "M"],
+}
 
 class VGG(nn.Module):
     def __init__(self, features, num_classes = 10):
         super(VGG, self).__init__()
         self.features = features
         self.classifier = nn.Sequential(
-            nn.Linear(512, 512),
-            nn.ReLU(),
+            nn.Linear(512, 4096),
+            nn.ReLU(True),
             nn.Dropout(),
-            nn.Linear(512,512),
-            nn.ReLU(),
+            nn.Linear(4096,1000),
+            nn.ReLU(True),
             nn.Dropout(),
-            nn.Linear(512, num_classes),
+            nn.Linear(1000, num_classes),
         )
+        self.flatten = nn.Flatten()
     def forward(self, x) :
         x = self.features(x)
-        x = x.view(x.size(0), -1)
+        x = self.flatten(x)
         x = self.classifier(x)
         return x
+
+def _vgg(cfg: str, batch_norm: bool, progress: bool, **kwargs: Any) -> VGG:
+    model = VGG(make_layers_CNN(cfgs[cfg], batch_norm=batch_norm), **kwargs)
+    return model
+
+def vgg16(*, progress: bool = True, **kwargs: Any) -> VGG:
+    return _vgg("D", False, progress, **kwargs)

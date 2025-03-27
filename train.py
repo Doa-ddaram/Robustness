@@ -3,19 +3,17 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 import torchvision.transforms as transforms
-from torchvision.models import vgg16
+from torchvision.models import vgg11
 from torchvision.datasets import MNIST, CIFAR10
-from utils.model.cnn import CNN,VGG, make_layers_CNN
+from utils.model.cnn import CNN,VGG, make_layers_CNN, vgg16
 from utils.model.snn import SNN, SNN_VGG, make_layers_SNN
 from tqdm.auto import tqdm
 import argparse
 from utils.spikingjelly.spikingjelly.activation_based import functional, layer, learning, encoding, neuron, surrogate
-from utils.spikingjelly.spikingjelly.activation_based.model import spiking_vgg
+from utils.spikingjelly.spikingjelly.activation_based.model import spiking_resnet, spiking_vgg
 from utils.Adversarial.adversial_image import *
 from typing import Tuple, Callable, List
-from torch.autograd import Variable
 import wandb
-import os
 import random
 
 def implement_parser():
@@ -56,7 +54,7 @@ def train_CNN(
     loss = total_loss / length
     acc = (total_acc / length) * 100
     if save:
-        th.save(net.state_dict(), f"./saved/{net}_{args.dset}.pt")
+        th.save(net.state_dict(), f"./saved/{args.net}_{args.dset}.pt")
     return loss, acc
                     
 def test_CNN(
@@ -65,10 +63,9 @@ def test_CNN(
     loss_fn : Callable[[th.Tensor, th.Tensor], th.Tensor],
     attack : bool = False,
     epsilon : float = 0.05
-             ) -> Tuple[float, float]: 
-    total_acc = 0
-    total_loss = 0
-    net.eval()
+             ) -> Tuple[float, float]:
+    net.eval() 
+    total_acc, total_loss = 0, 0
     length = 0
     for i, (data, target) in tqdm(enumerate(iter(data_loader))):
         data, target = data.to(device), target.to(device)
@@ -144,9 +141,6 @@ def train_STDP(
         pred_target = y_hat.argmax(1)
         total_acc += (pred_target == target).sum().item()
         length += len(target)
-    import gc
-    gc.collect()
-    th.cuda.empty_cache()
     loss = total_loss / length
     acc = (total_acc / length) * 100
     if save:
@@ -160,7 +154,6 @@ def test_SNN(
     attack : bool = False,
     epsilon : float = 0.05
              ) -> Tuple[float, float]: 
-    T = 20
     total_acc, total_loss = 0, 0
     net.eval()
     length = 0
@@ -191,7 +184,7 @@ if __name__ == "__main__":
     num_epochs = args.t
     batch_size = 32
     num_workers = 4
-    learning_rate = 1e-2
+    learning_rate = 1e-4
     seed = args.seed
     save = args.save
     attack = args.attack
@@ -199,7 +192,7 @@ if __name__ == "__main__":
     th.manual_seed(seed)
     th.cuda.manual_seed(seed)
     th.cuda.manual_seed_all(seed)
-    th.use_deterministic_algorithms(True)
+    th.use_deterministic_algorithms(True, warn_only = True)
     random.seed(seed)
     
     device = th.device("cuda" if th.cuda.is_available() else "cpu")
@@ -229,19 +222,23 @@ if __name__ == "__main__":
         )
     
     else:
-        transform = transforms.Compose([
-            # transforms.RandomHorizontalFlip(),
-            # transforms.RandomCrop(32, padding = 2),
+        transform_train = transforms.Compose([
+            transforms.RandomHorizontalFlip(),
+            transforms.RandomCrop(32, padding = 2),
             transforms.ToTensor(),
             transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
         ])
-    
+
+        transform_test = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
+        ])
         
         CIFAR10_train = CIFAR10(
-            root = './data/CIFAR10', download= True, train= True, transform= transform
+            root = './data/CIFAR10', download= True, train= True, transform= transform_train
         )
         CIFAR10_test = CIFAR10(
-            root= './data/CIFAR10', download=True, train = False, transform=transform
+            root= './data/CIFAR10', download=True, train = False, transform=transform_test
         )
         
         train_loader = DataLoader(
@@ -257,7 +254,9 @@ if __name__ == "__main__":
                group = args.net,
                config = config,
                name = args.dset + '_' + args.net)
-    instances_stdp = (layer.Conv2d,)
+    instances_stdp = (
+                      layer.Linear,
+                      )
     tau_pre = 2.
     tau_post = 10.
     def f_weight(x):
@@ -299,7 +298,7 @@ if __name__ == "__main__":
             optimizer = th.optim.Adam(net.parameters(), lr = learning_rate)
         else:
             net = vgg16().to(device)
-            optimizer = th.optim.SGD(net.parameters(), lr = learning_rate)
+            optimizer = th.optim.Adam(net.parameters(), lr = learning_rate)
         for epoch in range(num_epochs):
             loss, acc = train_CNN(
                 net = net,
@@ -341,11 +340,11 @@ if __name__ == "__main__":
             net = SNN(T = 20).to(device)
             optimizer = th.optim.Adam(net.parameters(), lr = learning_rate)
         else:
-            #net = SNN_VGG(make_layers_SNN(cfg_vgg16, batch_norm=False)).to(device)
+            #net = vgg16(T = 20).to(device)
             net = spiking_vgg.spiking_vgg11(
-                num_classes = 10, spiking_neuron = neuron.LIFNode, 
-                surrogate_function = surrogate.ATan()
+                num_classes = 10, spiking_neuron = neuron.IFNode
                 ).to(device)
+            optimizer = th.optim.Adam(net.parameters(), lr = learning_rate)
         for epoch in range(num_epochs):
             if args.net == 'SNN':
                 loss, acc = train_SNN(
@@ -361,20 +360,6 @@ if __name__ == "__main__":
                     loss_fn = Loss_function,
                     save = save
                     )
-            # linear_weight = net.linear.weight.detach().cpu().numpy()
-            # #linear
-            # sum_linear = linear_weight.sum(axis=0).reshape(4,28,28).sum(axis = 0)
-            # fig, ax = plt.subplots()
-            # im = ax.imshow(sum_linear, cmap = 'hot')
-            # fig.colorbar(im, ax = ax)
-            # ax.set_title(f"{args.net} linear Heatmap")
-            # wandb.log({
-            #         "Linear heatmap" : wandb.Image(fig),
-            #         "train loss" : loss,
-            #         "train acc" : acc
-            # }, step = epoch
-            #         )
-            # plt.close(fig)
             print(f'{epoch + 1} epoch\'s of Loss : {loss}, accuracy rate : {acc}')
             if (epoch + 1) % 10 == 0:
                 if attack :
