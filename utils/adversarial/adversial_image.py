@@ -48,7 +48,7 @@ def save_image(original_image, adversarial_image, filename, target):
         adversarial_image = adversarial_image[r].permute(1, 2, 0).detach().cpu().numpy()
         c = None
         label = ['airplane', 'automobile', 'bird', 'cat', 'deer', 'dog', 'frog', 'horse', 'ship', 'truck']
-    fig, axes = plt.subplots(1, 3, figsize = (10, 5))
+    fig, axes = plt.subplots(1, 2, figsize = (10, 5))
     
     axes[0].imshow(original_image, cmap = c)
     axes[0].set_title(f"Original\nLabel: {label[target[r].item()]}")
@@ -58,9 +58,9 @@ def save_image(original_image, adversarial_image, filename, target):
     axes[1].set_title(f"adversarial\nLabel: {label[target[r].item()]}")
     axes[1].axis('off')
     
-    axes[2].imshow(th.abs(adversarial_image - original_image), cmap = c)
-    axes[2].set_title("Peturbation")
-    axes[2].axis('off')
+    # axes[2].imshow(th.abs(adversarial_image - original_image), cmap = c)
+    # axes[2].set_title("Peturbation")
+    # axes[2].axis('off')
     
     plt.tight_layout()
     plt.savefig(filename)
@@ -90,87 +90,48 @@ def compute_confidence(model, images: th.Tensor, labels: th.Tensor):
     :return: avg confidence
     """
     with th.no_grad():
-        logits = model(images)
+        if images.dim() == 4 :
+            logits = model(images)
+        else:
+            logits = model(images).mean(0)
         probs = F.softmax(logits, dim=1)
+        print(probs)
         conf = probs[th.arange(len(labels)), labels]
     return conf.mean().item()
 
-def compute_attack_success_rate(model, adv: th.Tensor, labels: th.Tensor):
+def compute_attack_success_rate(model, adv: th.Tensor, label: th.Tensor):
     """
     :param model: net
     :param adv: adv example (B, C, H, W)
-    :param labels: origin label (B,)
+    :param label: origin label (B,)
     :return: adv success (0.0 ~ 1.0)
     """
     with th.no_grad():
-        preds = model(adv).argmax(dim=1)
+        if adv.dim() == 4:
+            preds = model(adv).argmax(dim=1)
+        else:
+            preds = model(adv).mean(0).argmax(dim=1)
     # 
-    incorrect = (preds != labels).sum().item()
-    return incorrect / len(labels)
+    incorrect = (preds != label).sum().item()
+    return incorrect / len(label)
 
-def evaluate_adversarial(model, data_loader, device, epsilon=0.1, loss_fn=None):
+def evaluate_adversarial(model, image, adversarial_image, label, epsilon=0.1):
     """
     :param model: net
-    :param data_loader: data_loader
-    :param device: 'cuda'
+    :param image : origin image
+    :param adversarial_image : adv example
+    :param label : origin label
     :param epsilon: FGSM intensity
-    :param loss_fn: Loss function
     """
-    if loss_fn is None:
-        loss_fn = th.nn.CrossEntropyLoss()
+    # 1)
+    conf_orig = compute_confidence(model, image, label)
+    conf_adv = compute_confidence(model, adversarial_image, label)
 
-    model.eval()
+    # 2)
+    l2, linf = compute_norm_differences(image, adversarial_image)
 
-    total_l2, total_linf = 0.0, 0.0
-    total_attack_success = 0.0
-    total_samples = 0
+    # 3) 
+    success_rate = compute_attack_success_rate(model, adversarial_image, label)
 
-    total_conf_orig, total_conf_adv = 0.0, 0.0
 
-    for data, target in data_loader:
-        data, target = data.to(device), target.to(device)
-
-        # 1)
-        conf_orig = compute_confidence(model, data, target)
-
-        # 2) 
-        data.requires_grad = True
-        output = model(data)
-        loss = loss_fn(output, target)
-        model.zero_grad()
-        loss.backward()
-
-        data_grad = data.grad.data
-        adv_data = data + epsilon * data_grad.sign()
-        adv_data = th.clamp(adv_data, 0, 1)
-
-        # 3) 
-        conf_adv = compute_confidence(model, adv_data, target)
-
-        # 4)
-        l2, linf = compute_norm_differences(data, adv_data)
-
-        # 5) 
-        asr = compute_attack_success_rate(model, adv_data, target)
-
-        batch_size = data.size(0)
-        total_l2 += l2 * batch_size
-        total_linf += linf * batch_size
-        total_conf_orig += conf_orig * batch_size
-        total_conf_adv += conf_adv * batch_size
-        total_attack_success += asr * batch_size
-        total_samples += batch_size
-
-    # 
-    mean_l2 = total_l2 / total_samples
-    mean_linf = total_linf / total_samples
-    mean_asr = total_attack_success / total_samples
-    mean_conf_orig = total_conf_orig / total_samples
-    mean_conf_adv = total_conf_adv / total_samples
-
-    print(f"FGSM (epsilon = {epsilon}) evaluate result")
-    print(f"  - avg L2 norm difference   : {mean_l2:.4f}")
-    print(f"  - adv Linf norm difference   : {mean_linf:.4f}")
-    print(f"  - adv success(ASR)    : {mean_asr*100:.2f}%")
-    print(f"  - ori avg confidence : {mean_conf_orig:.4f}")
-    print(f"  - adv avg confidence : {mean_conf_adv:.4f}")
+    return l2, linf, conf_orig, conf_adv, success_rate

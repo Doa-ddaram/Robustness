@@ -1,20 +1,13 @@
 import torch as th
 import torch.nn as nn
-import torch.nn.functional as F
 from torch.utils.data import DataLoader
 import torchvision.transforms as transforms
-from torchvision.models import vgg11
 from torchvision.datasets import MNIST, CIFAR10
-from utils.model.cnn import CNN,VGG, make_layers_CNN, vgg16
-from utils.model.snn import SNN, SNN_VGG, make_layers_SNN
-from tqdm.auto import tqdm
+from utils.train.cnn import train_evaluate_cnn
+from utils.train.snn import train_evaluate_snn
+from utils.train.stdp import train_evaluate_stdp
 import argparse
-from utils.spikingjelly.spikingjelly.activation_based import functional, layer, learning, encoding, neuron, surrogate
-from utils.spikingjelly.spikingjelly.activation_based.model import spiking_resnet, spiking_vgg
-from utils.Adversarial.adversial_image import *
-from typing import Tuple, Callable, List
 import wandb
-import random
 
 def implement_parser():
     parser = argparse.ArgumentParser()
@@ -23,190 +16,58 @@ def implement_parser():
     parser.add_argument('-t', type = int, help = 'training time step')
     parser.add_argument('--seed', type = int, help = 'fixed random seed')
     parser.add_argument('--dset', type = str, help = 'input dataset.')
+    parser.add_argument('--batch_size', type = int, default = 32, help = 'batch size')
+    parser.add_argument('--optimizer', type = str, default = 'adam', help = 'optimizer function')
+    parser.add_argument('--loss_funtion', type = str, default = 'cross_entropy')
+    parser.add_argument('--device', type = str, default = 'cuda', help = 'cuda or cpu')
+    parser.add_argument('--learning_rate', type = float, default = 1e-2, help = 'hyperparamter learning rate')
 
     parser.add_argument('--attack', action=argparse.BooleanOptionalAction, help = 'enable or disable attack, type = bool')
     parser.add_argument('--save', action=argparse.BooleanOptionalAction, help = 'Saved')
     parser.add_argument('--epsilon', type = float, default = None, help = 'if Adv attack, Must be typing. type float')
+    parser.add_argument('--indicate', action=argparse.BooleanOptionalAction, help = 'wandb indicate')
     
     args = parser.parse_args()
     return args
 
-def train_CNN(
-    net : nn.Module,  
-    data_loader : DataLoader[tuple[th.Tensor, th.Tensor]],
-    loss_fn : Callable[[th.Tensor,th.Tensor], th.Tensor],
-    save : bool = False
-          ) -> None : 
-    total_loss, total_acc = 0, 0
-    net.train()
-    length = 0
-    for i, (data, target) in tqdm(enumerate(iter(data_loader))):
-        data, target = data.to(device), target.to(device)
-        optimizer.zero_grad()
-        y_hat = net(data)
-        loss = loss_fn(y_hat, target)
-        loss.backward()
-        optimizer.step()
-        total_loss += loss.item()
-        pred_target = y_hat.argmax(1)
-        total_acc += (pred_target == target).sum().item()
-        length += len(target)
-    loss = total_loss / length
-    acc = (total_acc / length) * 100
-    if save:
-        th.save(net.state_dict(), f"./saved/{args.net}_{args.dset}.pt")
-    return loss, acc
-                    
-def test_CNN(
-    net : nn.Module,
-    data_loader : DataLoader[tuple[th.Tensor, th.Tensor]], 
-    loss_fn : Callable[[th.Tensor, th.Tensor], th.Tensor],
-    attack : bool = False,
-    epsilon : float = 0.05
-             ) -> Tuple[float, float]:
-    net.eval() 
-    total_acc, total_loss = 0, 0
-    length = 0
-    for i, (data, target) in tqdm(enumerate(iter(data_loader))):
-        data, target = data.to(device), target.to(device)
-        if attack :
-            adv_imgs= generate_adversial_image(net, data, target, epsilon = epsilon)
-            save_image(data,adv_imgs, f'./images/comparison_image_{args.net}_{args.dset}.png', target)
-            data = adv_imgs
-        with th.no_grad():
-            y_hat = net(data)
-            loss = loss_fn(y_hat, target)
-            total_loss += loss.item()
-            pred_target = y_hat.argmax(1)
-            total_acc += (pred_target == target).sum().item()
-            length += len(target)
-    total_loss /= length
-    total_acc = total_acc / length * 100
-    return total_loss, total_acc
-
-def train_SNN(
-    net : nn.Module,  
-    data_loader : DataLoader[tuple[th.Tensor, th.Tensor]],
-    loss_fn : Callable[[th.Tensor, th.Tensor], th.Tensor],
-    save : bool = False
-          ) -> None : 
-    total_loss, total_acc = 0, 0
-    net.train()
-    length = 0
-    for i, (data, target) in tqdm(enumerate(iter(data_loader))):
-        data, target = data.to(device), target.to(device)
-        optimizer.zero_grad()
-        y_hat = net(data).mean(0)
-        loss = loss_fn(y_hat, target)
-        loss.backward()
-        optimizer.step()
-        total_loss += loss.item()
-        pred_target = y_hat.argmax(1)
-        total_acc += (pred_target == target).sum().item()
-        length += len(target)
-        functional.reset_net(net)
-    loss = total_loss / length
-    acc = (total_acc / length) * 100 
-    if save:
-        th.save(net.state_dict(), f"./saved/{args.net}_{args.dset}.pt")
-    return loss, acc
-
-def train_STDP(
-    net : nn.Module,
-    data_loader : DataLoader[tuple[th.Tensor, th.Tensor]],
-    loss_fn : Callable[[th.Tensor, th.Tensor], th.Tensor],
-    save : bool = False,
-        ) -> None :
-    net.train()
-    total_acc, total_loss = 0, 0
-    length = 0
-    optimizer_stdp = th.optim.SGD(parameters_stdp, lr = learning_rate)
-    optimizer = th.optim.Adam(net.parameters(), lr = learning_rate)
-    for i, (data, target) in tqdm(enumerate(iter(data_loader))):
-        data, target = data.to(device), target.to(device) 
-        optimizer_stdp.zero_grad()
-        optimizer.zero_grad()
-        y_hat = net(data).mean(0)
-        loss = loss_fn(y_hat, target)
-        loss.backward()
-        for i in range(stdp_learners.__len__()):
-            with th.no_grad():
-               stdp_learners[i].step(on_grad = False)
-        optimizer_stdp.step()
-        optimizer.step()
-        functional.reset_net(net)
-        for i in range(stdp_learners.__len__()):
-            stdp_learners[i].reset()
-        total_loss += loss.item()
-        pred_target = y_hat.argmax(1)
-        total_acc += (pred_target == target).sum().item()
-        length += len(target)
-    loss = total_loss / length
-    acc = (total_acc / length) * 100
-    if save:
-        th.save(net.state_dict(), f"./saved/{args.net}_{args.dset}.pt")
-    return loss, acc
-      
-def test_SNN(
-    net : nn.Module,
-    data_loader : DataLoader[tuple[th.Tensor, th.Tensor]],
-    loss_fn : Callable[[th.Tensor, th.Tensor], th.Tensor],
-    attack : bool = False,
-    epsilon : float = 0.05
-             ) -> Tuple[float, float]: 
-    total_acc, total_loss = 0, 0
-    net.eval()
-    length = 0
-    for i, (data, target) in tqdm (enumerate(iter(data_loader))):
-        data, target = data.to(device), target.to(device)
-        if attack:
-            was_training = net.training
-            net.train()
-            with th.enable_grad():
-                adv_imgs = generate_adversial_image(net, data, target, epsilon = epsilon)
-            save_image(data, adv_imgs, f'./images/comparison_image_{args.net}_{args.dset}.png', target)
-            data = adv_imgs
-            if not was_training:
-                net.eval()
-        y_hat = net(data).mean(0)
-        loss = loss_fn(y_hat, target)
-        total_loss += loss.item()
-        pred_target = y_hat.argmax(1)
-        total_acc += (pred_target == target).sum().item()
-        functional.reset_net(net)
-        length += len(target)
-    total_loss /= length
-    total_acc = total_acc / length * 100
-    return total_loss, total_acc
-
-if __name__ == "__main__":
-    args = implement_parser()
-    num_epochs = args.t
-    batch_size = 32
-    num_workers = 4
-    learning_rate = 1e-4
-    seed = args.seed
-    save = args.save
-    attack = args.attack
-    
+def manual_seed(seed : int = 42):
     th.manual_seed(seed)
     th.cuda.manual_seed(seed)
     th.cuda.manual_seed_all(seed)
     th.use_deterministic_algorithms(True, warn_only = True)
-    random.seed(seed)
     
-    device = th.device("cuda" if th.cuda.is_available() else "cpu")
+if __name__ == "__main__":
+    args = implement_parser()
     
-    config = {
-            'dataset' : args.dset,
+    num_epochs = args.t
+    batch_size = 32
+    num_workers = 4
+    lr = args.learning_rate
+    seed = args.seed
+    save = args.save
+    attack = args.attack
+    data_set = args.dset.upper()
+    epsilon = args.epsilon
+    device = args.device
+    network = args.net.upper()
+    indicate = args.indicate
+    
+    if indicate:
+        config = {
+            'dataset' : data_set,
             'batch_size' : batch_size,
             'num_epochs' : num_epochs,
-            'learning_rate' : learning_rate,
+            'learning_rate' : lr,
             'seed' : seed,
-            'epsilon' : args.epsilon
+            'epsilon' : epsilon
         }
     
-    if args.dset == 'MNIST' :
+        wandb.init(project = data_set,
+                group = network,
+                config = config,
+                name = data_set + '_' + network)
+        
+    if data_set == 'MNIST' :
         MNIST_train = MNIST(
             root = './data', download = True, train = True, transform = transforms.ToTensor()
         )
@@ -249,145 +110,28 @@ if __name__ == "__main__":
         )
     
     Loss_function= nn.CrossEntropyLoss().to(device)
-    
-    wandb.init(project = args.dset,
-               group = args.net,
-               config = config,
-               name = args.dset + '_' + args.net)
-    instances_stdp = (
-                      layer.Linear,
-                      )
-    tau_pre = 2.
-    tau_post = 10.
-    def f_weight(x):
-        return th.clamp(x, -1, 1.)
-    step_mode = 'm'
-    stdp_learners = []
-    net = SNN(T = 20).to(device)
-    for i, layers in enumerate(net.modules()):
-        if isinstance(layers, nn.Sequential):
-            for j, layer_in in enumerate(layers):
-                if isinstance(layer_in, neuron.BaseNode):
-                    synapse = layers[j-1]
-                    sn_layer = layer_in
-                    stdp_learners.append(
-                        learning.STDPLearner(
-                            step_mode = step_mode,
-                            synapse = synapse,
-                            sn = sn_layer,
-                            tau_pre = tau_pre,
-                            tau_post = tau_post,
-                            f_pre = f_weight,
-                            f_post = f_weight
-                        )
-                    )   
-    parameters_stdp = []
-    for module in net.modules():
-        if isinstance(module, instances_stdp):
-            for parameters in module.parameters():
-                parameters_stdp.append(parameters)
-    parameters_stdp_set = set(parameters_stdp)
-    parameters_gd = []
-    for parameters in net.parameters():
-        if parameters not in parameters_stdp_set:
-            parameters_gd.append(parameters)
 
-    if args.net == 'CNN':
-        if args.dset == 'MNIST':
-            net = CNN().to(device)
-            optimizer = th.optim.Adam(net.parameters(), lr = learning_rate)
-        else:
-            net = vgg16().to(device)
-            optimizer = th.optim.Adam(net.parameters(), lr = learning_rate)
-        for epoch in range(num_epochs):
-            loss, acc = train_CNN(
-                net = net,
-                data_loader= train_loader,
-                loss_fn = Loss_function,
-                save = save
-                )
-            print(f'{epoch + 1} epoch\'s of Loss : {loss}, accuracy rate : {acc}')
-            if (epoch+ 1) % 10 == 0:
-                if attack :
-                    adv_loss, adv_acc = test_CNN(
-                        net = net, 
-                        data_loader=test_loader, 
-                        loss_fn = Loss_function, 
-                        attack = True,
-                        epsilon = args.epsilon
-                        )
-                    wandb.log({
-                        "attack loss" : adv_loss,
-                        "attack acc" : adv_acc   
-                    },
-                        step = epoch
-                        )
-                    print(f'adv acc of {epoch+1} : {adv_acc}, and adv loss of {epoch+1} : {adv_loss}')
-                clean_loss, clean_acc = test_CNN(
-                    net = net, 
-                    data_loader= test_loader, 
-                    loss_fn = Loss_function, 
-                    attack = False)
-                wandb.log({
-                    "clean loss" : clean_loss,
-                    "clean acc" : clean_acc
-                },
-                    step = epoch
-                    )
-                print(f'clean acc of {epoch+1} : {clean_acc}, and clean loss of {epoch+1} : {clean_loss}')
+    if network == 'CNN':
+        loss_acc = train_evaluate_cnn(data_set, lr, num_epochs, train_loader, test_loader, Loss_function, epsilon, attack, save, device)
+    elif network == 'SNN':
+        loss_acc = train_evaluate_snn(data_set, lr, num_epochs, train_loader, test_loader, Loss_function, epsilon, attack, save, device)
     else:
-        if args.dset == 'MNIST':
-            net = SNN(T = 20).to(device)
-            optimizer = th.optim.Adam(net.parameters(), lr = learning_rate)
-        else:
-            #net = vgg16(T = 20).to(device)
-            net = spiking_vgg.spiking_vgg11(
-                num_classes = 10, spiking_neuron = neuron.IFNode
-                ).to(device)
-            optimizer = th.optim.Adam(net.parameters(), lr = learning_rate)
-        for epoch in range(num_epochs):
-            if args.net == 'SNN':
-                loss, acc = train_SNN(
-                    net = net,
-                    data_loader= train_loader,
-                    loss_fn = Loss_function,
-                    save = save
-                    )
-            else :
-                loss, acc = train_STDP(
-                    net = net,
-                    data_loader = train_loader,
-                    loss_fn = Loss_function,
-                    save = save
-                    )
-            print(f'{epoch + 1} epoch\'s of Loss : {loss}, accuracy rate : {acc}')
-            if (epoch + 1) % 10 == 0:
-                if attack :
-                    adv_loss, adv_acc = test_SNN(
-                        net = net, 
-                        data_loader=test_loader,  
-                        loss_fn = Loss_function,
-                        attack = True,
-                        epsilon = args.epsilon
-                        )
+        loss_acc = train_evaluate_stdp(data_set, lr, num_epochs, train_loader, test_loader, Loss_function, epsilon, attack, save, device)
+    
+    if indicate:
+        for i in range(len(loss_acc[0])):
+                if attack:
                     wandb.log({
-                        "attack loss" : adv_loss,
-                        "attack acc" : adv_acc   
-                    },
-                        step = epoch
-                    )
-                    print(f'adv acc of {epoch+1} : {adv_acc}, and adv loss of {epoch+1} : {adv_loss}')
-                clean_loss, clean_acc = test_SNN(
-                    net = net, 
-                    data_loader= test_loader,
-                    loss_fn = Loss_function,
-                    attack = False)
+                                    "attack loss" : loss_acc[4],
+                                    "attack acc" : loss_acc[5]   
+                                },
+                                    step = i
+                                    )
                 wandb.log({
-                    "clean loss" : clean_loss,
-                    "clean acc" : clean_acc
-                },
-                    step = epoch
-                    )
-                print(f'clean acc of {epoch+1} : {clean_acc}, and clean loss of {epoch+1} : {clean_loss}')
-    # total_params = sum(p.numel() for p in net.parameters())
-    # print(total_params)
+                            "training loss" : loss_acc[0],
+                            "trainin acc" : loss_acc[1],
+                            "clean loss" : loss_acc[2],
+                            "clean acc" : loss_acc[3]
+                        },
+                            step = i
+                )
