@@ -7,13 +7,14 @@ from utils.adversarial.adversial_image import *
 from utils.model.cnn import CNN
 from torchvision.models import vgg16
 
+
 def train_CNN(
-    net : nn.Module,
-    optimizer, 
-    data_loader : DataLoader[tuple[th.Tensor, th.Tensor]],
-    loss_fn : Callable[[th.Tensor,th.Tensor], th.Tensor],
-    device : str = 'cuda',
-          ) -> Tuple[float, float] : 
+    net: nn.Module,
+    optimizer,
+    data_loader: DataLoader[tuple[th.Tensor, th.Tensor]],
+    loss_fn: Callable[[th.Tensor, th.Tensor], th.Tensor],
+    device: str = "cuda",
+) -> Tuple[float, float]:
     net.train()
     total_loss, total_acc = 0, 0
     length = 0
@@ -32,28 +33,31 @@ def train_CNN(
     acc = (total_acc / length) * 100
     return loss, acc
 
+
 def test_CNN(
-    net : nn.Module,
-    data_loader : DataLoader[tuple[th.Tensor, th.Tensor]], 
-    loss_fn : Callable[[th.Tensor, th.Tensor], th.Tensor],
-    data_set : Callable[[str], None],
-    attack : bool = False,
-    epsilon : float = 0.05,
-    device : str = 'cuda'
-             ) -> Tuple[float, float]:
-    net.eval() 
+    net: nn.Module,
+    data_loader: DataLoader[tuple[th.Tensor, th.Tensor]],
+    loss_fn: Callable[[th.Tensor, th.Tensor], th.Tensor],
+    data_set: Callable[[str], None],
+    attack: bool = False,
+    epsilon: float = 0.05,
+    device: str = "cuda",
+) -> Tuple[float, float]:
+    net.eval()
     total_acc, total_loss = 0, 0
     length = 0
     l2, linf, conf_orig, conf_adv, asr = 0, 0, 0, 0, 0
     for i, (data, target) in tqdm(enumerate(iter(data_loader))):
         data, target = data.to(device), target.to(device)
-        if attack :
-            adv_imgs= generate_adversial_image(net, data, target, epsilon = epsilon)
+        if attack:
+            adv_imgs = generate_adversial_image(net, data, target, epsilon=epsilon)
             conf_orig = conf_orig + compute_confidence(net, data, target) * len(target)
-            conf_adv = conf_adv + compute_confidence(net,adv_imgs, target) * len(target)
-            l2, linf = l2 + compute_norm_differences(data, adv_imgs)[0] * len(target), linf + compute_norm_differences(data, adv_imgs)[1] * len(target)
+            conf_adv = conf_adv + compute_confidence(net, adv_imgs, target) * len(target)
+            l2, linf = l2 + compute_norm_differences(data, adv_imgs)[0] * len(target), linf + compute_norm_differences(
+                data, adv_imgs
+            )[1] * len(target)
             asr = asr + compute_attack_success_rate(net, adv_imgs, target) * len(target)
-            save_image(data,adv_imgs, f'./images/comparison_image_cnn_{data_set}.png', target)
+            save_image(data, adv_imgs, f"./images/comparison_image_cnn_{data_set}.png", target)
             data = adv_imgs
         with th.no_grad():
             y_hat = net(data)
@@ -77,59 +81,44 @@ def test_CNN(
     print(f"  - adv avg confidence : {conf_adv:.4f}")
     return total_loss, total_acc
 
+
 def train_evaluate_cnn(
-    data_set, 
-    learning_rate, 
-    num_epochs, 
-    train_loader, 
-    test_loader, 
-    Loss_function, 
-    epsilon, 
-    attack, 
-    save, 
-    device
-    ) -> List:
-    if data_set == 'MNIST':
+    data_set, learning_rate, num_epochs, train_loader, test_loader, Loss_function, epsilon, attack, save, device
+) -> List:
+    if data_set == "MNIST":
         net = CNN().to(device)
     else:
         net = vgg16().to(device)
-    optimizer = th.optim.Adam(net.parameters(), lr = learning_rate)
+    optimizer = th.optim.Adam(net.parameters(), lr=learning_rate)
     loss, acc = [], []
     clean_loss, clean_acc, adv_loss, adv_acc = [], [], [], []
     for epoch in range(num_epochs):
         epoch_loss, epoch_acc = train_CNN(
-            net = net,
-            data_loader= train_loader,
-            loss_fn = Loss_function,
-            device = device,
-            optimizer = optimizer
-            )
+            net=net, data_loader=train_loader, loss_fn=Loss_function, device=device, optimizer=optimizer
+        )
         loss.append(epoch_loss)
         acc.append(epoch_acc)
-        print(f'{epoch + 1} epoch\'s of Loss : {epoch_loss}, accuracy rate : {epoch_acc}')
+        print(f"{epoch + 1} epoch's of Loss : {epoch_loss}, accuracy rate : {epoch_acc}")
         if save:
             th.save(net.state_dict(), f"./saved/cnn_{data_set}.pt")
         if (epoch + 1) % 10 == 0:
-            if attack :
+            if attack:
                 epoch_adv_loss, epoch_adv_acc = test_CNN(
-                    net = net, 
-                    data_loader=test_loader, 
-                    loss_fn = Loss_function,
+                    net=net,
+                    data_loader=test_loader,
+                    loss_fn=Loss_function,
                     data_set=data_set,
-                    attack = True,
-                    epsilon = epsilon
-                    )
-                print(f'adv acc of {epoch+1} : {epoch_adv_acc}, and adv loss of {epoch+1} : {epoch_adv_loss}')
+                    attack=True,
+                    epsilon=epsilon,
+                )
+                print(f"adv acc of {epoch+1} : {epoch_adv_acc}, and adv loss of {epoch+1} : {epoch_adv_loss}")
                 adv_acc.append(epoch_adv_acc)
                 adv_loss.append(epoch_adv_loss)
             epoch_clean_loss, epoch_clean_acc = test_CNN(
-                net = net, 
-                data_loader= test_loader, 
-                loss_fn = Loss_function,
-                data_set=data_set,
-                attack = False)
+                net=net, data_loader=test_loader, loss_fn=Loss_function, data_set=data_set, attack=False
+            )
             clean_acc.append(epoch_clean_acc)
             clean_loss.append(epoch_clean_loss)
-            print(f'clean acc of {epoch+1} : {epoch_clean_acc}, and clean loss of {epoch+1} : {epoch_clean_loss}')
+            print(f"clean acc of {epoch+1} : {epoch_clean_acc}, and clean loss of {epoch+1} : {epoch_clean_loss}")
     total = [loss, acc, clean_loss, clean_acc, adv_loss, adv_acc]
     return total
