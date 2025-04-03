@@ -94,8 +94,14 @@ def evaluate_model(config: Config) -> Tuple[float, float]:
             data = adv_imgs
             if not was_training:
                 net.eval()
-        y_hat = net(data).mean(0) if config.method != "CNN" else net(data)
-        loss = config.loss_fn(y_hat, target)
+
+            for i in config.stdp_learners:
+                i.reset()
+
+        with th.no_grad():
+            y_hat = net(data).mean(0) if config.method != "CNN" else net(data)
+            loss = config.loss_fn(y_hat, target)
+
         total_loss += loss.item()
         pred_target = y_hat.argmax(1)
         total_acc += (pred_target == target).sum().item()

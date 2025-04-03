@@ -14,16 +14,24 @@ def generate_adversial_image(model, image, target, epsilon=0.05):
     param epsilon : adversial intensity
     """
     image = image.clone().detach().to(th.device("cuda:0"))
+    target = target.clone().detach().to(th.device("cuda:0"))
+
     image.requires_grad = True
     y_hat = model(image)
+
     if y_hat.dim() == 3:
         y_hat = y_hat.mean(0)
     loss = F.cross_entropy(y_hat, target)
-    model.zero_grad()
-    loss.backward()
-    grad_sign = image.grad.sign()
+
+    # model.zero_grad()
+    # loss.backward()
+
+    # grad_sign = image.grad.sign()
+
+    grad_sign = th.autograd.grad(loss, image, retain_graph=False, create_graph=False)[0].sign()
+
     adversarial_image = image + epsilon * grad_sign  # image + pertubation
-    adversarial_image = th.clamp(adversarial_image, 0, 1)
+    adversarial_image = th.clamp(adversarial_image, 0, 1).detach()
     return adversarial_image
 
 
