@@ -81,6 +81,10 @@ def evaluate_model(config: Config) -> Tuple[float, float]:
         net.load_state_dict(th.load(f"./saved/{config.method.lower()}_{config.data_set}.pt"))
     total_loss, total_acc = 0, 0
     length = 0
+
+    for i in config.stdp_learners:
+        i.disable()
+
     for i, (data, target) in tqdm(enumerate(iter(config.test_loader))):
         data, target = data.to(config.device), target.to(config.device)
         if config.attack:
@@ -95,9 +99,6 @@ def evaluate_model(config: Config) -> Tuple[float, float]:
             if not was_training:
                 net.eval()
 
-            for i in config.stdp_learners:
-                i.reset()
-
         with th.no_grad():
             y_hat = net(data).mean(0) if config.method != "CNN" else net(data)
             loss = config.loss_fn(y_hat, target)
@@ -108,6 +109,10 @@ def evaluate_model(config: Config) -> Tuple[float, float]:
         if config.method != "CNN":
             functional.reset_net(net)
         length += len(target)
+
+    for i in config.stdp_learners:
+        i.enable()
+
     return total_loss / length, (total_acc / length) * 100
 
 
