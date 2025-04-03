@@ -41,7 +41,7 @@ def implement_parser():
     parser.add_argument("-t", type=int, help="training time step")
     parser.add_argument("--seed", type=int, help="fixed random seed")
     parser.add_argument("--dset", type=str, help="input dataset.")
-    parser.add_argument("--batch_size", type=int, default=32, help="batch size")
+    parser.add_argument("--batch_size", type=int, default=256, help="batch size")
     parser.add_argument("--device", type=str, default="cuda", help="cuda or cpu")
     parser.add_argument("--learning_rate", type=float, default=1e-2, help="hyperparamter learning rate")
     parser.add_argument("--num_workers", type=int, default=8, help="number of worker")

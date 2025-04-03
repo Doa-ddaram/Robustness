@@ -40,7 +40,9 @@ def train_model(config: Config) -> Tuple[float, float]:
     net = config.network
     net.train()
     total_acc, total_loss, length = 0, 0, 0
-    optimizer_stdp = th.optim.SGD(config.parameters_stdp, lr=config.lr) if config.parameters_stdp else None
+    optimizer_stdp = (
+        th.optim.SGD(config.parameters_stdp, lr=config.lr * 0.01, momentum=0.0) if config.parameters_stdp else None
+    )
 
     for i, (data, target) in tqdm(enumerate(iter(config.train_loader))):
         data, target = data.to(config.device), target.to(config.device)
@@ -145,9 +147,11 @@ def train_evaluate(config: Config) -> None:
                                 f_post=lambda x: th.clamp(x, -1, 1.0),
                             )
                         )
+
         for module in net.modules():
             if isinstance(module, nn.Conv2d):
                 parameters_stdp.extend(module.parameters())
+
     config.network = net
     config.parameters_stdp = parameters_stdp
     config.stdp_learners = stdp_learners
