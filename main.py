@@ -30,7 +30,6 @@ class Config:
     attack : bool = False
     save : bool = False
     load : bool = False
-    indicate : bool = True
     epsilon : float = 0.05
 
 def implement_parser():
@@ -49,7 +48,6 @@ def implement_parser():
     
     parser.add_argument('--load', action=argparse.BooleanOptionalAction, help = 'whether load model parameter, type = bool')
     parser.add_argument('--save', action=argparse.BooleanOptionalAction, help = 'Saved')
-    parser.add_argument('--indicate', action=argparse.BooleanOptionalAction, help = 'wandb indicate')
     
     args = parser.parse_args()
     return Config(
@@ -64,7 +62,6 @@ def implement_parser():
         load = args.load,
         attack = args.attack,
         epsilon = args.epsilon,
-        indicate = args.indicate
     )
 
 def manual_seed(seed : int = 42) -> None:
@@ -76,20 +73,19 @@ def manual_seed(seed : int = 42) -> None:
 if __name__ == "__main__":
     args = implement_parser()
     
-    if args.indicate:
-        config = {
-            'dataset' : args.data_set,
-            'batch_size' : args.batch_size,
-            'num_epochs' : args.num_epochs,
-            'learning_rate' : args.lr,
-            'seed' : args.seed,
-            'epsilon' : args.epsilon
-        }
-    
-        wandb.init(project = args.data_set,
-                group = args.network,
-                config = config,
-                name = args.data_set + '_' + args.network)
+    # config = {
+    #     'dataset' : args.data_set,
+    #     'batch_size' : args.batch_size,
+    #     'num_epochs' : args.num_epochs,
+    #     'learning_rate' : args.lr,
+    #     'seed' : args.seed,
+    #     'epsilon' : args.epsilon
+    # }
+
+    # wandb.init(project = args.data_set,
+    #         group = args.method,
+    #         config = config,
+    #         name = args.data_set + '_' + args.method)
 
     manual_seed(args.seed)
     
@@ -143,20 +139,3 @@ if __name__ == "__main__":
     
     loss_acc = train_evaluate(args)
     
-    if args.indicate:
-        for epoch in range(args.num_epochs):
-                if args.attack:
-                    wandb.log({
-                                    "attack loss" : loss_acc[4][epoch],
-                                    "attack acc" : loss_acc[5][epoch]   
-                                },
-                                    step = epoch
-                                    )
-                wandb.log({
-                            "training loss" : loss_acc[0][epoch],
-                            "trainin acc" : loss_acc[1][epoch],
-                            "clean loss" : loss_acc[2][epoch],
-                            "clean acc" : loss_acc[3][epoch]
-                        },
-                            step = epoch
-                )

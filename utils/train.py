@@ -10,6 +10,7 @@ from typing import Callable, List, Type, Tuple
 from tqdm.auto import tqdm
 from .model import CNN, SNN
 from .adversial_image import *
+import wandb
 
 
 @dataclass
@@ -52,13 +53,14 @@ def train_model(config : Config) -> Tuple[float, float]:
         loss.backward()
         
         if config.method == 'STDP' and config.stdp_learners:
-            with th.no_grad():
-                for learner in config.stdp_learners:
+            for learner in config.stdp_learners:
+                with th.no_grad():
                     learner.step(on_grad=False)
             optimizer_stdp.step()
         
         config.optimizer.step()
         if config.method != 'CNN':
+            print('hello')
             functional.reset_net(net)
         total_loss += loss.item()
         total_acc += (y_hat.argmax(1) == target).sum().item()
@@ -71,12 +73,13 @@ def evaluate_model(config : Config
     net = config.network
     net.eval()
     if config.load:
-        net.load_state_dict(th.load(f'./saved/{config.method.lower()}_{config.dataset}.pt'))
+        net.load_state_dict(th.load(f'./saved/{config.method.lower()}_{config.data_set}.pt'))
     total_loss, total_acc = 0, 0
     length = 0
     for i, (data, target) in tqdm(enumerate(iter(config.test_loader))):
         data, target = data.to(config.device), target.to(config.device)
         if config.attack:
+            was_training = net.training
             net.train()
             with th.enable_grad():
                 adv_imgs = generate_adversial_image(net, data, target, config.epsilon)
@@ -84,7 +87,8 @@ def evaluate_model(config : Config
                 data, adv_imgs, f'./images/comparison_image_{config.method.lower()}_{config.data_set}.png', target
                 )
             data = adv_imgs
-            net.eval()
+            if not was_training:
+                 net.eval()
         y_hat = net(data).mean(0) if config.method != 'CNN' else net(data)
         loss = config.loss_fn(y_hat, target)
         total_loss += loss.item()
@@ -96,7 +100,7 @@ def evaluate_model(config : Config
     return total_loss / length, (total_acc / length) * 100
 
 # Unified training function and evaluate function
-def train_evaluate(config : Config):
+def train_evaluate(config : Config) -> None:
     if config.method == 'CNN':
         net = CNN().to(config.device) if config.data_set == 'MNIST' else vgg16().to(config.device)
     else:
@@ -122,8 +126,6 @@ def train_evaluate(config : Config):
             if isinstance(module, layer.Linear):
                 parameters_stdp.extend(module.parameters())
     config.network = net
-    loss, acc = [], []
-    clean_loss, clean_acc, adv_loss, adv_acc = [], [], [], []
     attack = config.attack
     if attack:
         adv_config = replace(config, attack = True)
@@ -133,28 +135,46 @@ def train_evaluate(config : Config):
             if attack :
                 epoch_adv_loss, epoch_adv_acc = evaluate_model(adv_config)
                 print(f'{epoch + 1} epoch - adv_loss: {epoch_adv_loss:.4f}, adv_acc: {epoch_adv_acc:.2f}%')
-                adv_loss.append(epoch_adv_loss)
-                adv_acc.append(epoch_adv_acc)  
+                # wandb.log({
+                #          "attack loss" : adv_loss,
+                #          "attack acc" : adv_acc   
+                #      },
+                #          step = epoch + 1
+                #      )
             epoch_clean_loss, epoch_clean_acc = evaluate_model(config)
-            print(f'{epoch + 1} epoch - clean_loss: {epoch_clean_loss:.4f}, clean_acc: {epoch_clean_acc:.2f}%')  
-            clean_loss.append(epoch_clean_loss)
-            clean_acc.append(epoch_clean_acc)
+            print(f'{epoch + 1} epoch - clean_loss: {epoch_clean_loss:.4f}, clean_acc: {epoch_clean_acc:.2f}%')
+            # wandb.log({
+            #          "clean loss" : clean_loss,
+            #          "clean acc" : clean_acc
+            #      },
+            #          step = epoch
+            #          )
         else:
             epoch_loss, epoch_acc = train_model(config)
-            loss.append(epoch_loss)
-            acc.append(epoch_acc)
             print(f'{epoch + 1} epoch - Loss: {epoch_loss:.4f}, Acc: {epoch_acc:.2f}%')
+            # wandb.log({
+            #              "attack loss" : epoch_loss,
+            #              "attack acc" : epoch_acc   
+            #          },
+            #              step = epoch + 1
+            #          )
             if config.save:
-                th.save(net.state_dict(), f'./saved/{config.net.lower()}_{config.data_set}.pt')
+                th.save(net.state_dict(), f'./saved/{config.method.lower()}_{config.data_set}.pt')
             if attack :
                 epoch_adv_loss, epoch_adv_acc = evaluate_model(adv_config)
+                # wandb.log({
+                #          "attack loss" : adv_loss,
+                #          "attack acc" : adv_acc   
+                #      },
+                #          step = epoch + 1
+                #      )
                 print(f'{epoch + 1} epoch - adv_loss: {epoch_adv_loss:.4f}, adv_acc: {epoch_adv_acc:.2f}%')
-                adv_loss.append(epoch_adv_loss)
-                adv_acc.append(epoch_adv_acc)
                 config.attack = False
             epoch_clean_loss, epoch_clean_acc = evaluate_model(config)
-            print(f'{epoch + 1} epoch - clean_loss: {epoch_clean_loss:.4f}, clean_acc: {epoch_clean_acc:.2f}%') 
-            clean_loss.append(epoch_clean_loss)
-            clean_acc.append(epoch_clean_acc)
-    loss_acc = [loss, acc, clean_loss, clean_acc, adv_loss, adv_acc]
-    return loss_acc
+            print(f'{epoch + 1} epoch - clean_loss: {epoch_clean_loss:.4f}, clean_acc: {epoch_clean_acc:.2f}%')
+            # wandb.log({
+            #          "clean loss" : clean_loss,
+            #          "clean acc" : clean_acc
+            #      },
+            #          step = epoch
+            #          )
