@@ -4,7 +4,7 @@ import torch.optim as optim
 from torchvision.models import vgg16
 from torch.utils.data import DataLoader
 from dataclasses import dataclass, replace
-from .spikingjelly.spikingjelly.activation_based import functional, learning, neuron, layer
+from .spikingjelly.spikingjelly.activation_based import functional, learning, neuron
 from .spikingjelly.spikingjelly.activation_based.model import spiking_vgg
 from typing import Callable, List, Type, Tuple
 from tqdm.auto import tqdm
@@ -16,6 +16,7 @@ from .adversial_image import *
 class Config:
     network: Type[nn.Module]
     optimizer: Type[optim.Optimizer]
+    optimizer_stdp: Type[optim.Optimizer]
     train_loader: DataLoader[tuple[th.Tensor, th.Tensor]] = None
     test_loader: DataLoader[tuple[th.Tensor, th.Tensor]] = None
     loss_fn: Callable[[th.Tensor, th.Tensor], th.Tensor] = None
@@ -40,28 +41,24 @@ def train_model(config: Config) -> Tuple[float, float]:
     net = config.network
     net.train()
     total_acc, total_loss, length = 0, 0, 0
-    optimizer_stdp = (
-        th.optim.SGD(config.parameters_stdp, lr=config.lr * 0.01, momentum=0.0) if config.parameters_stdp else None
-    )
 
     for i, (data, target) in tqdm(enumerate(iter(config.train_loader))):
         data, target = data.to(config.device), target.to(config.device)
         config.optimizer.zero_grad()
         if config.parameters_stdp:
-            optimizer_stdp.zero_grad()
+            config.optimizer_stdp.zero_grad()
 
         y_hat = net(data).mean(0) if config.method != "CNN" else net(data)
         loss = config.loss_fn(y_hat, target)
         loss.backward()
-
         if config.parameters_stdp:
             for learner in config.stdp_learners:
                 learner.step(on_grad=True)
 
         config.optimizer.step()
-
+        config.optimizer_stdp.zero_grad()
         if config.parameters_stdp:
-            optimizer_stdp.step()
+            config.optimizer_stdp.step()
 
         functional.reset_net(net)
 
@@ -78,32 +75,27 @@ def train_model(config: Config) -> Tuple[float, float]:
 
 def evaluate_model(config: Config) -> Tuple[float, float]:
     net = config.network
-    net.eval()
     if config.load:
         net.load_state_dict(th.load(f"./saved/{config.method.lower()}_{config.data_set}.pt"))
     total_loss, total_acc = 0, 0
     length = 0
 
-    for i in config.stdp_learners:
-        i.disable()
+    if config.stdp_learners:
+        for i in config.stdp_learners:
+            i.disable()
 
     for i, (data, target) in tqdm(enumerate(iter(config.test_loader))):
         data, target = data.to(config.device), target.to(config.device)
         if config.attack:
-            was_training = net.training
             net.train()
-            with th.enable_grad():
-                adv_imgs = generate_adversial_image(net, data, target, config.epsilon)
+            adv_imgs = generate_adversial_image(net, data, target, config.epsilon)
             save_image(
                 data, adv_imgs, f"./images/comparison_image_{config.method.lower()}_{config.data_set}.png", target
             )
             data = adv_imgs
-            if not was_training:
-                net.eval()
-
-        with th.no_grad():
-            y_hat = net(data).mean(0) if config.method != "CNN" else net(data)
-            loss = config.loss_fn(y_hat, target)
+        net.eval()
+        y_hat = net(data).mean(0) if config.method != "CNN" else net(data)
+        loss = config.loss_fn(y_hat, target)
 
         total_loss += loss.item()
         pred_target = y_hat.argmax(1)
@@ -112,8 +104,9 @@ def evaluate_model(config: Config) -> Tuple[float, float]:
             functional.reset_net(net)
         length += len(target)
 
-    for i in config.stdp_learners:
-        i.enable()
+    if config.stdp_learners:
+        for i in config.stdp_learners:
+            i.enable()
 
     return total_loss / length, (total_acc / length) * 100
 
@@ -124,14 +117,15 @@ def train_evaluate(config: Config) -> None:
         net = CNN().to(config.device) if config.data_set == "MNIST" else vgg16().to(config.device)
     else:
         net = (
-            SNN(T=10).to(config.device)
+            SNN(T=20).to(config.device)
             if config.data_set == "MNIST"
             else spiking_vgg.spiking_vgg16(num_classes=10, spiking_neuron=neuron.IFNode).to(config.device)
         )
     config.optimizer = th.optim.Adam(net.parameters(), lr=config.lr)
-    stdp_learners, parameters_stdp = [], []
+
 
     if config.method == "STDP":
+        stdp_learners, parameters_stdp = [], []
         for layers in net.modules():
             if isinstance(layers, nn.Sequential):
                 for i, layer_in in enumerate(layers):
@@ -142,19 +136,20 @@ def train_evaluate(config: Config) -> None:
                                 synapse=layers[i],
                                 sn=layers[i + 1],
                                 tau_pre=2.0,
-                                tau_post=10.0,
+                                tau_post=100.0,
                                 f_pre=lambda x: th.clamp(x, -1, 1.0),
                                 f_post=lambda x: th.clamp(x, -1, 1.0),
                             )
                         )
 
         for module in net.modules():
-            if isinstance(module, nn.Conv2d):
+            if isinstance(module, nn.Linear):
                 parameters_stdp.extend(module.parameters())
-
+        config.parameters_stdp = parameters_stdp
+        config.stdp_learners = stdp_learners
+        optimizer_stdp = th.optim.SGD(config.parameters_stdp, lr=config.lr, momentum=0.0)
+        config.optimizer_stdp = optimizer_stdp
     config.network = net
-    config.parameters_stdp = parameters_stdp
-    config.stdp_learners = stdp_learners
 
     attack = config.attack
     if attack:

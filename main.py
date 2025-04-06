@@ -15,6 +15,7 @@ from typing import Type, Callable, List
 class Config:
     network: Type[nn.Module] = None
     optimizer: Type[optim.Optimizer] = None
+    optimizer_stdp: Type[optim.Optimizer] = None
     train_loader: DataLoader[tuple[th.Tensor, th.Tensor]] = None
     test_loader: DataLoader[tuple[th.Tensor, th.Tensor]] = None
     loss_fn: Callable[[th.Tensor, th.Tensor], th.Tensor] = None

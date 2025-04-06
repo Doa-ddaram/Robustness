@@ -17,6 +17,7 @@ def generate_adversial_image(model, image, target, epsilon=0.05):
     target = target.clone().detach().to(th.device("cuda:0"))
 
     image.requires_grad = True
+    model.zero_grad()
     y_hat = model(image)
 
     if y_hat.dim() == 3:
@@ -37,8 +38,8 @@ def generate_adversial_image(model, image, target, epsilon=0.05):
 
 def save_image(original_image, adversarial_image, filename, target):
     """
-    param original_image : original_image (shape : [batch_size, 1 or 3, 28, 28])
-    param adversarial_image : adversarial_image (shape : [batch_size, 1 or 3, 28, 28])
+    param original_image : original_image (shape : [batch_size, 1, 28, 28] or [batch_size, 3, 32, 32])
+    param adversarial_image : adversarial_image (shape : [batch_size, 1, 28, 28] or [batch_size, 3, 32, 32])
     param filename : saved file name
     param target : target of the image
     """
@@ -68,10 +69,6 @@ def save_image(original_image, adversarial_image, filename, target):
     axes[1].imshow(adversarial_image, cmap=c)
     axes[1].set_title(f"adversarial\nLabel: {label[target[r].item()]}")
     axes[1].axis("off")
-
-    # axes[2].imshow(th.abs(adversarial_image - original_image), cmap = c)
-    # axes[2].set_title("Peturbation")
-    # axes[2].axis('off')
 
     plt.tight_layout()
     plt.savefig(filename)
