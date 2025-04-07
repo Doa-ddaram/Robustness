@@ -3,9 +3,10 @@ import torch.nn.functional as F
 import matplotlib.pyplot as plt
 import torch.nn as nn
 from torchvision import transforms
+from .spikingjelly.spikingjelly.activation_based import functional
 
 
-def generate_adversial_image(model, image, target, epsilon=0.05):
+def generate_adv_image(model, image, target, epsilon=0.05):
     """
     Method : FGSM
     param model : trained model
@@ -16,23 +17,38 @@ def generate_adversial_image(model, image, target, epsilon=0.05):
     image = image.clone().detach().to(th.device("cuda:0"))
     target = target.clone().detach().to(th.device("cuda:0"))
 
-    image.requires_grad = True
-    y_hat = model(image)
+    ori_image = image.data
 
-    if y_hat.dim() == 3:
-        y_hat = y_hat.mean(0)
-    loss = F.cross_entropy(y_hat, target)
+    iters = 20
 
-    # model.zero_grad()
-    # loss.backward()
+    loss = F.cross_entropy
 
-    # grad_sign = image.grad.sign()
+    alpha = 0.05
 
-    grad_sign = th.autograd.grad(loss, image, retain_graph=False, create_graph=False)[0].sign()
+    for i in range(iters):
+        image.requires_grad_()
 
-    adversarial_image = image + epsilon * grad_sign  # image + pertubation
-    adversarial_image = th.clamp(adversarial_image, 0, 1).detach()
-    return adversarial_image
+        outputs = model(image).mean(0)
+
+        # print("image.requires_grad:", image.requires_grad)
+        # print("outputs.requires_grad:", outputs.requires_grad)
+
+        model.zero_grad()
+        cost = loss(outputs, target).to(th.device("cuda:0"))
+        cost.backward()
+
+        outputs = outputs.detach()
+
+        # print("cost.requires_grad:", cost.requires_grad)
+        # print("cost.grad_fn:", cost.grad_fn)
+
+        adv_images = image + alpha * image.grad.sign()
+        eta = th.clamp(adv_images - ori_image, min=-epsilon, max=epsilon)
+        image = th.clamp(ori_image + eta, min=0, max=1).detach().clone().requires_grad_(True)
+
+        functional.reset_net(model)
+
+    return adv_images
 
 
 def save_image(original_image, adversarial_image, filename, target):
