@@ -78,7 +78,7 @@ def save_image(original_image, adversarial_image, filename, target):
 def compute_norm_differences(orig: th.Tensor, adv: th.Tensor):
     """
     :param orig: origin image (B, C, H, W)
-    :param adv:  adv example (B, C, H, W)
+    :param adv: adv example (B, C, H, W)
     :return: (mean_l2, mean_linf)
     """
     # norm calculate
@@ -95,7 +95,7 @@ def compute_norm_differences(orig: th.Tensor, adv: th.Tensor):
 def compute_confidence(model, images: th.Tensor, labels: th.Tensor):
     """
     :param model: net
-    :param images: iknput image (B, C, H, W)
+    :param images: input image (B, C, H, W)
     :param labels: label (B,)
     :return: avg confidence
     """

@@ -42,6 +42,8 @@ def train_model(config: Config) -> Tuple[float, float]:
     net.train()
     total_acc, total_loss, length = 0, 0, 0
 
+    if config.method == 'STDP' :
+        config.optimizer.disable()
     for i, (data, target) in tqdm(enumerate(iter(config.train_loader))):
         data, target = data.to(config.device), target.to(config.device)
         config.optimizer.zero_grad()
@@ -69,7 +71,8 @@ def train_model(config: Config) -> Tuple[float, float]:
         total_loss += loss.item()
         total_acc += (y_hat.argmax(1) == target).sum().item()
         length += len(target)
-
+    if config.method == 'STDP':
+        config.optimizer.enable()
     return total_loss / length, (total_acc / length) * 100
 
 
