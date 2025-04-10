@@ -54,6 +54,19 @@ def manual_seed(seed: int = 42) -> None:
     th.use_deterministic_algorithms(True, warn_only=True)
 
 
+class PoissonEncoder:
+    def __init__(self, T: int):
+        self.T = T
+
+    def __call__(self, image: th.Tensor) -> th.Tensor:
+        """
+        image: (1, 28, 28), float tensor in [0,1]
+        return: (T, 1, 28, 28), binary spikes
+        """
+        # Poisson spike sampling across T timesteps
+        return (th.rand(self.T, *image.shape) < image).float()
+
+
 if __name__ == "__main__":
     args = implement_parser()
 
@@ -74,8 +87,10 @@ if __name__ == "__main__":
     manual_seed(args.seed)
 
     if args.data_set == "MNIST":
-        MNIST_train = MNIST(root="./data", download=True, train=True, transform=transforms.ToTensor())
-        MNIST_test = MNIST(root="./data", download=True, train=False, transform=transforms.ToTensor())
+        transform = transforms.Compose([transforms.ToTensor(), PoissonEncoder(T=10)])
+
+        MNIST_train = MNIST(root="./data", download=True, train=True, transform=transform)
+        MNIST_test = MNIST(root="./data", download=True, train=False, transform=transform)
 
         train_loader = DataLoader(MNIST_train, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers)
         test_loader = DataLoader(MNIST_test, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers)

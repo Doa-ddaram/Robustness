@@ -57,6 +57,7 @@ class SNN(nn.Module):
         Returns:
             th.Tensor: Output tensor, shape (batch_size, 10)
         """
-        x = x.unsqueeze(0).repeat(self.T, 1, 1, 1, 1)
+        # x = x.unsqueeze(0).repeat(self.T, 1, 1, 1, 1)
+        x = x.permute(1, 0, 2, 3, 4)
         x = self.layer(x)
         return x

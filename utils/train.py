@@ -9,7 +9,7 @@ from .spikingjelly.spikingjelly.activation_based.model import spiking_vgg
 from typing import Tuple
 from tqdm.auto import tqdm
 from .model import CNN, SNN
-from .adversarial_image import generate_adv_image, save_image
+from .adversarial_image import generate_adversial_image_fgsm, save_image
 from .config import Config
 
 
@@ -22,29 +22,28 @@ def train_model(config: Config, mode=None) -> Tuple[float, float]:
     for i, (data, target) in tqdm(enumerate(iter(config.train_loader))):
         data, target = data.to(config.device), target.to(config.device)
 
-        if mode == "gd":
-            config.optimizer.zero_grad()
+        config.optimizer.zero_grad()
 
-        if mode == "stdp":
-            if config.parameters_stdp:
-                config.optimizer_stdp.zero_grad()
+        if config.parameters_stdp:
+            config.optimizer_stdp.zero_grad()
 
         y_hat = net(data).mean(0) if config.method != "CNN" else net(data)
         loss = config.loss_fn(y_hat, target)
-        loss.backward()
 
         if mode == "stdp":
             if config.parameters_stdp:
                 for learner in config.stdp_learners:
                     with th.no_grad():
                         learner.step(on_grad=True)
+                        learner.synapse.weight.data.clamp_(0.0, 1.0)
 
         if mode == "gd":
+            loss.backward()
             config.optimizer.step()
 
-        if mode == "stdp":
-            if config.parameters_stdp:
-                config.optimizer_stdp.step()
+        # if mode == "stdp":
+        #    if config.parameters_stdp:
+        #        config.optimizer_stdp.step()
 
         functional.reset_net(net)
 
@@ -64,9 +63,12 @@ def train_model(config: Config, mode=None) -> Tuple[float, float]:
 
 def evaluate_model(config: Config) -> Tuple[float, float]:
     net = config.network
-    net.eval()
+    # net.eval()
     if config.load:
         net.load_state_dict(th.load(f"./saved/{config.method.lower()}_{config.data_set}.pt"))
+
+    net.eval()
+
     total_loss, total_acc = 0, 0
     length = 0
 
@@ -78,7 +80,7 @@ def evaluate_model(config: Config) -> Tuple[float, float]:
         if config.attack:
             net.train()
 
-            adv_imgs = generate_adv_image(net, data, target, config.epsilon)
+            adv_imgs = generate_adversial_image_fgsm(net, data, target, config.epsilon)
             save_image(
                 data, adv_imgs, f"./images/comparison_image_{config.method.lower()}_{config.data_set}.png", target
             )
@@ -141,26 +143,42 @@ def train_evaluate(config: Config) -> None:
                 print(f"Adding STDP learner to {module}")
                 added = True
                 parameters_stdp.extend(module.parameters())
-            elif isinstance(module, (nn.Linear, nn.Conv2d)):
+            else:
                 print(f"Adding GD Optimizer to {module}")
                 parameters_gd.extend(module.parameters())
     else:
         parameters_gd = net.parameters()
 
-    config.optimizer = th.optim.Adam(parameters_gd, lr=config.lr)
+    all_parameters = list(net.parameters())
+    parameters_stdp_set = set(parameters_stdp)
+    parameters_gd = [p for p in all_parameters if p not in parameters_stdp_set]
+
+    config.optimizer = th.optim.Adam(all_parameters, lr=config.lr)
 
     config.network = net
     config.parameters_stdp = parameters_stdp
     config.stdp_learners = stdp_learners
 
     config.optimizer_stdp = (
-        th.optim.SGD(config.parameters_stdp, lr=config.lr, momentum=0.0) if config.parameters_stdp else None
+        th.optim.SGD(config.parameters_stdp, lr=config.lr * 0.1, momentum=0.0) if config.parameters_stdp else None
     )
 
     attack = config.attack
     if attack:
         adv_config = replace(config, attack=True)
         config = replace(config, attack=False)
+
+    layer_num = 0
+    layer_num_2 = 3
+
+    weight = config.network.layer[layer_num].weight.clone()
+    weight2 = config.network.layer[layer_num_2].weight.clone()
+
+    print("Weight stats after STDP:")
+    print("min:", weight.data.min().item())
+    print("max:", weight.data.max().item())
+    print("mean:", weight.data.mean().item())
+
     for epoch in range(config.num_epochs):
         if config.load:
             if attack:
@@ -183,8 +201,27 @@ def train_evaluate(config: Config) -> None:
         else:
             if epoch % 2 == 1:
                 epoch_loss, epoch_acc = train_model(config, "stdp")
+
+                print("After STDP:", (weight - config.network.layer[layer_num].weight).abs().sum())
+                print("After STDP:", (weight2 - config.network.layer[layer_num_2].weight).abs().sum())
+
+                weight = config.network.layer[layer_num].weight.clone()
+                weight2 = config.network.layer[layer_num_2].weight.clone()
+
+                print("Weight stats after STDP:")
+                print("min:", weight.data.min().item())
+                print("max:", weight.data.max().item())
+                print("mean:", weight.data.mean().item())
+
             else:
                 epoch_loss, epoch_acc = train_model(config, "gd")
+
+                print("After GD:", (weight - config.network.layer[layer_num].weight).abs().sum())
+                print("After GD:", (weight2 - config.network.layer[layer_num_2].weight).abs().sum())
+
+                weight = config.network.layer[layer_num].weight.clone()
+                weight2 = config.network.layer[layer_num_2].weight.clone()
+
             print(f"{epoch + 1} epoch - Loss: {epoch_loss:.4f}, Acc: {epoch_acc:.2f}%")
             # wandb.log({
             #              "attack loss" : epoch_loss,
@@ -192,7 +229,7 @@ def train_evaluate(config: Config) -> None:
             #          },
             #              step = epoch + 1
             #          )
-            if config.save:
+            if True:
                 th.save(net.state_dict(), f"./saved/{config.method.lower()}_{config.data_set}.pt")
             if attack:
                 epoch_adv_loss, epoch_adv_acc = evaluate_model(adv_config)

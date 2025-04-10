@@ -4,11 +4,47 @@ import matplotlib.pyplot as plt
 import torch.nn as nn
 from torchvision import transforms
 from .spikingjelly.spikingjelly.activation_based import functional
+from .model import CNN, SNN
 
 
-def generate_adv_image(model, image, target, epsilon=0.05):
+def generate_adversial_image_fgsm(model, image, target, epsilon=0.05):
     """
     Method : FGSM
+    param model : trained model
+    param image : original image (shape : [batch_size, 1, 28, 28])
+    param target : target of original image
+    param epsilon : adversial intensity
+    """
+    image = image.clone().detach().to(th.device("cuda:0"))
+    target = target.clone().detach().to(th.device("cuda:0"))
+
+    # model = SNN(T=10).cuda()
+    # model.load_state_dict(th.load(f"./saved/snn_MNIST.pt"))
+
+    image.requires_grad = True
+    model.zero_grad()
+    y_hat = model(image)
+
+    if y_hat.dim() == 3:
+        y_hat = y_hat.mean(0)
+    loss = F.cross_entropy(y_hat, target)
+
+    # model.zero_grad()
+    # loss.backward()
+
+    # grad_sign = image.grad.sign()
+
+    grad_sign = th.autograd.grad(loss, image, retain_graph=False, create_graph=False)[0].sign()
+
+    adversarial_image = image + epsilon * grad_sign  # image + pertubation
+    adversarial_image = th.clamp(adversarial_image, 0, 1).detach()
+
+    return adversarial_image
+
+
+def generate_adv_image_pgd(model, image, target, epsilon=0.05):
+    """
+    Method : PGD
     param model : trained model
     param image : original image (shape : [batch_size, 1, 28, 28])
     param target : target of original image
@@ -59,6 +95,9 @@ def save_image(original_image, adversarial_image, filename, target):
     param target : target of the image
     """
     import random
+
+    original_image = original_image.mean(1)
+    adversarial_image = adversarial_image.mean(1)
 
     r = random.randint(0, len(original_image) - 1)
 
