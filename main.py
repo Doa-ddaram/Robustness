@@ -7,14 +7,10 @@ from torchvision.datasets import MNIST, CIFAR10
 from utils.train import train_evaluate
 import argparse
 import wandb
-<<<<<<< HEAD
-from utils.config import Config
-=======
 from dataclasses import dataclass
 
 from utils.config import Config
 
->>>>>>> origin/sangki_merged
 
 def implement_parser():
     parser = argparse.ArgumentParser()
