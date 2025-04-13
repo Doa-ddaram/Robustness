@@ -10,11 +10,12 @@ import torch.optim as optim
 class Config:
     network: Type[nn.Module] = None
     optimizer: Type[optim.Optimizer] = None
+    optimizer_stdp: Type[optim.Optimizer] = None
     train_loader: DataLoader[tuple[th.Tensor, th.Tensor]] = None
     test_loader: DataLoader[tuple[th.Tensor, th.Tensor]] = None
     loss_fn: Callable[[th.Tensor, th.Tensor], th.Tensor] = None
     stdp_learners: List = None
-    parameters_gd: List = None
+    parameters_stdp: List = None
     lr: float = 1e-2
     seed: int = 0
     num_workers: int = 8

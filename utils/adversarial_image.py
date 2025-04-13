@@ -3,9 +3,11 @@ import torch.nn.functional as F
 import matplotlib.pyplot as plt
 import torch.nn as nn
 from torchvision import transforms
+from .spikingjelly.spikingjelly.activation_based import functional
+from .model import CNN, SNN
 
 
-def generate_adversial_image(model, image, target, epsilon=0.05):
+def generate_adversial_image_fgsm(model, image, target, epsilon=0.05):
     """
     Method : FGSM
     param model : trained model
@@ -15,6 +17,9 @@ def generate_adversial_image(model, image, target, epsilon=0.05):
     """
     image = image.clone().detach().to(th.device("cuda:0"))
     target = target.clone().detach().to(th.device("cuda:0"))
+
+    # model = SNN(T=10).cuda()
+    # model.load_state_dict(th.load(f"./saved/snn_MNIST.pt"))
 
     image.requires_grad = True
     model.zero_grad()
@@ -33,7 +38,53 @@ def generate_adversial_image(model, image, target, epsilon=0.05):
 
     adversarial_image = image + epsilon * grad_sign  # image + pertubation
     adversarial_image = th.clamp(adversarial_image, 0, 1).detach()
+
     return adversarial_image
+
+
+def generate_adv_image_pgd(model, image, target, epsilon=0.05):
+    """
+    Method : PGD
+    param model : trained model
+    param image : original image (shape : [batch_size, 1, 28, 28])
+    param target : target of original image
+    param epsilon : adversial intensity
+    """
+    image = image.clone().detach().to(th.device("cuda:0"))
+    target = target.clone().detach().to(th.device("cuda:0"))
+
+    ori_image = image.data
+
+    iters = 20
+
+    loss = F.cross_entropy
+
+    alpha = 0.05
+
+    for i in range(iters):
+        image.requires_grad_()
+
+        outputs = model(image).mean(0)
+
+        # print("image.requires_grad:", image.requires_grad)
+        # print("outputs.requires_grad:", outputs.requires_grad)
+
+        model.zero_grad()
+        cost = loss(outputs, target).to(th.device("cuda:0"))
+        cost.backward()
+
+        outputs = outputs.detach()
+
+        # print("cost.requires_grad:", cost.requires_grad)
+        # print("cost.grad_fn:", cost.grad_fn)
+
+        adv_images = image + alpha * image.grad.sign()
+        eta = th.clamp(adv_images - ori_image, min=-epsilon, max=epsilon)
+        image = th.clamp(ori_image + eta, min=0, max=1).detach().clone().requires_grad_(True)
+
+        functional.reset_net(model)
+
+    return adv_images
 
 
 def save_image(original_image, adversarial_image, filename, target):
@@ -44,6 +95,9 @@ def save_image(original_image, adversarial_image, filename, target):
     param target : target of the image
     """
     import random
+
+    original_image = original_image.mean(1)
+    adversarial_image = adversarial_image.mean(1)
 
     r = random.randint(0, len(original_image) - 1)
 
