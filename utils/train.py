@@ -45,7 +45,7 @@ def train_model(config: Config, mode=None) -> Tuple[float, float]:
 
         functional.reset_net(net)
 
-        if config.parameters_gd:
+        if config.parameters_stdp:
             for learner in config.stdp_learners:
                 learner.reset()
 
