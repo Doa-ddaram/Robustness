@@ -20,6 +20,7 @@ class Config:
     seed: int = 0
     num_workers: int = 8
     batch_size: int = 32
+    timestep: int = 20
     num_epochs: int = 50
     device: str = "cuda"
     method: str = "CNN"
