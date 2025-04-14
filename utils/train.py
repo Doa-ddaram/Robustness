@@ -8,7 +8,7 @@ from .spikingjelly.spikingjelly.activation_based import functional, learning, ne
 from .spikingjelly.spikingjelly.activation_based.model import spiking_vgg
 from typing import Tuple
 from tqdm.auto import tqdm
-from .model import CNN, SNN
+from .model import CNN, SNN, SNN_CIFAR10
 from .adversarial_image import generate_adversial_image_fgsm, save_image
 from .config import Config
 
@@ -19,7 +19,7 @@ def train_model(config: Config, mode=None) -> Tuple[float, float]:
     net.train()
     total_acc, total_loss, length = 0, 0, 0
 
-    for i, (data, target) in tqdm(enumerate(iter(config.train_loader))):
+    for i, (data, target) in tqdm(enumerate(config.train_loader), desc="Training", total=len(config.train_loader)):
         data, target = data.to(config.device), target.to(config.device)
 
         config.optimizer.zero_grad()
@@ -35,15 +35,18 @@ def train_model(config: Config, mode=None) -> Tuple[float, float]:
                 for learner in config.stdp_learners:
                     with th.no_grad():
                         learner.step(on_grad=True)
-                        learner.synapse.weight.data.clamp_(0.0, 1.0)
 
         if mode == "gd":
             loss.backward()
             config.optimizer.step()
 
-        # if mode == "stdp":
-        #    if config.parameters_stdp:
-        #        config.optimizer_stdp.step()
+        if mode == "stdp":
+            if config.parameters_stdp:
+                config.optimizer_stdp.step()
+
+                with th.no_grad():
+                    for learner in config.stdp_learners:
+                        learner.synapse.weight.data.clamp_(-5, 5.0)
 
         functional.reset_net(net)
 
@@ -75,7 +78,7 @@ def evaluate_model(config: Config) -> Tuple[float, float]:
     for i in config.stdp_learners:
         i.disable()
 
-    for i, (data, target) in tqdm(enumerate(iter(config.test_loader))):
+    for i, (data, target) in tqdm(enumerate(config.test_loader), desc="Evaluation", total=len(config.test_loader)):
         data, target = data.to(config.device), target.to(config.device)
         if config.attack:
             net.train()
@@ -110,18 +113,19 @@ def train_evaluate(config: Config) -> None:
         net = CNN().to(config.device) if config.data_set == "MNIST" else vgg16().to(config.device)
     else:
         net = (
-            SNN(T=10).to(config.device)
+            SNN(T=config.timestep).to(config.device)
             if config.data_set == "MNIST"
-            else spiking_vgg.spiking_vgg16(num_classes=10, spiking_neuron=neuron.IFNode).to(config.device)
+            else SNN_CIFAR10(T=config.timestep).to(config.device)
+            # spiking_vgg.spiking_vgg16(num_classes=10, spiking_neuron=neuron.IFNode).to(config.device)
         )
     stdp_learners, parameters_stdp, parameters_gd = [], [], []
 
     if config.method == "STDP":
-        added = False
+        added = 0
         for layers in net.modules():
             if isinstance(layers, nn.Sequential):
                 for i, layer_in in enumerate(layers):
-                    if isinstance(layer_in, nn.Conv2d) and not added:
+                    if isinstance(layer_in, nn.Conv2d) and added < 1:
                         print(f"Adding STDP learner from {layers[i]} to {layers[i + 1]}")
                         stdp_learners.append(
                             learning.STDPLearner(
@@ -134,18 +138,15 @@ def train_evaluate(config: Config) -> None:
                                 f_post=lambda x: th.clamp(x, -1, 1.0),
                             )
                         )
-                        added = True
+                        added += 1
 
-        added = False
+        added = 0
 
         for module in net.modules():
-            if isinstance(module, nn.Conv2d) and not added:
+            if isinstance(module, nn.Conv2d) and added < 1:
                 print(f"Adding STDP learner to {module}")
-                added = True
+                added += 1
                 parameters_stdp.extend(module.parameters())
-            else:
-                print(f"Adding GD Optimizer to {module}")
-                parameters_gd.extend(module.parameters())
     else:
         parameters_gd = net.parameters()
 
@@ -153,14 +154,14 @@ def train_evaluate(config: Config) -> None:
     parameters_stdp_set = set(parameters_stdp)
     parameters_gd = [p for p in all_parameters if p not in parameters_stdp_set]
 
-    config.optimizer = th.optim.Adam(all_parameters, lr=config.lr)
+    config.optimizer = th.optim.Adam(all_parameters, lr=config.lr, weight_decay=0)
 
     config.network = net
     config.parameters_stdp = parameters_stdp
     config.stdp_learners = stdp_learners
 
     config.optimizer_stdp = (
-        th.optim.SGD(config.parameters_stdp, lr=config.lr * 0.1, momentum=0.0) if config.parameters_stdp else None
+        th.optim.SGD(config.parameters_stdp, lr=config.lr * 0.01, momentum=0.0) if config.parameters_stdp else None
     )
 
     attack = config.attack
@@ -179,11 +180,21 @@ def train_evaluate(config: Config) -> None:
     print("max:", weight.data.max().item())
     print("mean:", weight.data.mean().item())
 
+    mode = "gd"
+
     for epoch in range(config.num_epochs):
+        if config.method == "SNN":
+            mode = "gd"
+        else:
+            if epoch % 5 == 0:
+                mode = "stdp"
+            else:
+                mode = "gd"
+
         if config.load:
             if attack:
                 epoch_adv_loss, epoch_adv_acc = evaluate_model(adv_config)
-                print(f"{epoch + 1} epoch - adv_loss: {epoch_adv_loss:.4f}, adv_acc: {epoch_adv_acc:.2f}%")
+                print(f"{epoch + 1} Epoch - adv_loss: {epoch_adv_loss:.4f}, adv_acc: {epoch_adv_acc:.2f}%")
                 # wandb.log({
                 #          "attack loss" : adv_loss,
                 #          "attack acc" : adv_acc
@@ -191,7 +202,7 @@ def train_evaluate(config: Config) -> None:
                 #          step = epoch + 1
                 #      )
             epoch_clean_loss, epoch_clean_acc = evaluate_model(config)
-            print(f"epoch - clean_loss: {epoch_clean_loss:.4f}, clean_acc: {epoch_clean_acc:.2f}%")
+            print(f"Epoch - clean_loss: {epoch_clean_loss:.4f}, clean_acc: {epoch_clean_acc:.2f}%")
             # wandb.log({
             #          "clean loss" : clean_loss,
             #          "clean acc" : clean_acc
@@ -199,30 +210,20 @@ def train_evaluate(config: Config) -> None:
             #          step = epoch
             #          )
         else:
-            if epoch % 2 == 1:
-                epoch_loss, epoch_acc = train_model(config, "stdp")
+            epoch_loss, epoch_acc = train_model(config, mode)
 
-                print("After STDP:", (weight - config.network.layer[layer_num].weight).abs().sum())
-                print("After STDP:", (weight2 - config.network.layer[layer_num_2].weight).abs().sum())
+            print(f"After {mode.upper()}:", (weight - config.network.layer[layer_num].weight).abs().sum().item())
+            print(f"After {mode.upper()}:", (weight2 - config.network.layer[layer_num_2].weight).abs().sum().item())
 
-                weight = config.network.layer[layer_num].weight.clone()
-                weight2 = config.network.layer[layer_num_2].weight.clone()
+            weight = config.network.layer[layer_num].weight.clone()
+            weight2 = config.network.layer[layer_num_2].weight.clone()
 
-                print("Weight stats after STDP:")
-                print("min:", weight.data.min().item())
-                print("max:", weight.data.max().item())
-                print("mean:", weight.data.mean().item())
+            print(f"Weight stats after {mode.upper()}:")
+            print("min:", weight.data.min().item())
+            print("max:", weight.data.max().item())
+            print("mean:", weight.data.mean().item())
 
-            else:
-                epoch_loss, epoch_acc = train_model(config, "gd")
-
-                print("After GD:", (weight - config.network.layer[layer_num].weight).abs().sum())
-                print("After GD:", (weight2 - config.network.layer[layer_num_2].weight).abs().sum())
-
-                weight = config.network.layer[layer_num].weight.clone()
-                weight2 = config.network.layer[layer_num_2].weight.clone()
-
-            print(f"{epoch + 1} epoch - Loss: {epoch_loss:.4f}, Acc: {epoch_acc:.2f}%")
+            print(f"{epoch + 1} Epoch - Loss: {epoch_loss:.4f}, Acc: {epoch_acc:.2f}%")
             # wandb.log({
             #              "attack loss" : epoch_loss,
             #              "attack acc" : epoch_acc
@@ -231,21 +232,23 @@ def train_evaluate(config: Config) -> None:
             #          )
             if True:
                 th.save(net.state_dict(), f"./saved/{config.method.lower()}_{config.data_set}.pt")
-            if attack:
-                epoch_adv_loss, epoch_adv_acc = evaluate_model(adv_config)
+
+            if mode == "gd":
+                if attack:
+                    epoch_adv_loss, epoch_adv_acc = evaluate_model(adv_config)
+                    # wandb.log({
+                    #          "attack loss" : adv_loss,
+                    #          "attack acc" : adv_acc
+                    #      },
+                    #          step = epoch + 1
+                    #      )
+                    print(f"adv_loss: {epoch_adv_loss:.4f}, adv_acc: {epoch_adv_acc:.2f}%")
+
+                epoch_clean_loss, epoch_clean_acc = evaluate_model(config)
+                print(f"clean_loss: {epoch_clean_loss:.4f}, clean_acc: {epoch_clean_acc:.2f}%")
                 # wandb.log({
-                #          "attack loss" : adv_loss,
-                #          "attack acc" : adv_acc
+                #          "clean loss" : clean_loss,
+                #          "clean acc" : clean_acc
                 #      },
-                #          step = epoch + 1
-                #      )
-                print(f"adv_loss: {epoch_adv_loss:.4f}, adv_acc: {epoch_adv_acc:.2f}%")
-                config.attack = False
-            epoch_clean_loss, epoch_clean_acc = evaluate_model(config)
-            print(f"clean_loss: {epoch_clean_loss:.4f}, clean_acc: {epoch_clean_acc:.2f}%")
-            # wandb.log({
-            #          "clean loss" : clean_loss,
-            #          "clean acc" : clean_acc
-            #      },
-            #          step = epoch
-            #          )
+                #          step = epoch
+                #          )

@@ -19,7 +19,8 @@ def implement_parser():
     parser.add_argument("-t", type=int, help="training time step")
     parser.add_argument("--seed", type=int, help="fixed random seed")
     parser.add_argument("--dset", type=str, help="input dataset.")
-    parser.add_argument("--batch_size", type=int, default=256, help="batch size")
+    parser.add_argument("--batch_size", type=int, default=128, help="batch size")
+    parser.add_argument("--timestep", type=int, default=50, help="batch size")
     parser.add_argument("--device", type=str, default="cuda", help="cuda or cpu")
     parser.add_argument("--learning_rate", type=float, default=1e-2, help="hyperparamter learning rate")
     parser.add_argument("--num_workers", type=int, default=8, help="number of worker")
@@ -44,6 +45,7 @@ def implement_parser():
         load=args.load,
         attack=args.attack,
         epsilon=args.epsilon,
+        timestep=args.timestep,
     )
 
 
@@ -87,7 +89,7 @@ if __name__ == "__main__":
     manual_seed(args.seed)
 
     if args.data_set == "MNIST":
-        transform = transforms.Compose([transforms.ToTensor(), PoissonEncoder(T=10)])
+        transform = transforms.Compose([transforms.ToTensor(), PoissonEncoder(T=args.timestep)])
 
         MNIST_train = MNIST(root="./data", download=True, train=True, transform=transform)
         MNIST_test = MNIST(root="./data", download=True, train=False, transform=transform)
@@ -101,12 +103,17 @@ if __name__ == "__main__":
                 transforms.RandomHorizontalFlip(),
                 transforms.RandomCrop(32, padding=2),
                 transforms.ToTensor(),
-                transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
+                transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2470, 0.2435, 0.2616)),  # 평균  # 표준편차
+                PoissonEncoder(T=args.timestep),
             ]
         )
 
         transform_test = transforms.Compose(
-            [transforms.ToTensor(), transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))]
+            [
+                transforms.ToTensor(),
+                transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2470, 0.2435, 0.2616)),  # 평균  # 표준편차
+                PoissonEncoder(T=args.timestep),
+            ]
         )
 
         CIFAR10_train = CIFAR10(root="./data/CIFAR10", download=True, train=True, transform=transform_train)
