@@ -6,8 +6,6 @@ import torchvision.transforms as transforms
 from torchvision.datasets import MNIST, CIFAR10
 from utils.train import train_evaluate
 import argparse
-import wandb
-from dataclasses import dataclass
 
 from utils.config import Config
 
@@ -19,12 +17,8 @@ def implement_parser():
     parser.add_argument("-t", type=int, help="training time step")
     parser.add_argument("--seed", type=int, help="fixed random seed")
     parser.add_argument("--dset", type=str, help="input dataset.")
-<<<<<<< HEAD
-    parser.add_argument("--batch_size", type=int, default=64, help="batch size")
-=======
     parser.add_argument("--batch_size", type=int, default=128, help="batch size")
     parser.add_argument("--timestep", type=int, default=50, help="batch size")
->>>>>>> origin/sangki_merged
     parser.add_argument("--device", type=str, default="cuda", help="cuda or cpu")
     parser.add_argument("--learning_rate", type=float, default=1e-2, help="hyperparamter learning rate")
     parser.add_argument("--num_workers", type=int, default=8, help="number of worker")
@@ -76,20 +70,6 @@ class PoissonEncoder:
 if __name__ == "__main__":
     args = implement_parser()
 
-    # config = {
-    #     'dataset' : args.data_set,
-    #     'batch_size' : args.batch_size,
-    #     'num_epochs' : args.num_epochs,
-    #     'learning_rate' : args.lr,
-    #     'seed' : args.seed,
-    #     'epsilon' : args.epsilon
-    # }
-
-    # wandb.init(project = args.data_set,
-    #         group = args.method,
-    #         config = config,
-    #         name = args.data_set + '_' + args.method)
-
     manual_seed(args.seed)
 
     if args.data_set == "MNIST":
@@ -107,7 +87,7 @@ if __name__ == "__main__":
                 transforms.RandomHorizontalFlip(),
                 transforms.RandomCrop(32, padding=2),
                 transforms.ToTensor(),
-                transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2470, 0.2435, 0.2616)),  # 평균  # 표준편차
+                transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2470, 0.2435, 0.2616)), 
                 PoissonEncoder(T=args.timestep),
             ]
         )
@@ -115,7 +95,7 @@ if __name__ == "__main__":
         transform_test = transforms.Compose(
             [
                 transforms.ToTensor(),
-                transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2470, 0.2435, 0.2616)),  # 평균  # 표준편차
+                transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2470, 0.2435, 0.2616)),  
                 PoissonEncoder(T=args.timestep),
             ]
         )
@@ -131,4 +111,4 @@ if __name__ == "__main__":
     args.loss_fn = Loss_function
     args.train_loader = train_loader
     args.test_loader = test_loader
-    loss_acc = train_evaluate(args)
+    train_evaluate(args)

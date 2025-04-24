@@ -36,16 +36,16 @@ class SNN(nn.Module):
         self.T = T
         self.layer = nn.Sequential(
             layer.Conv2d(1, 16, kernel_size=5, stride=1, padding=2, bias=False),
-            neuron.LIFNode(tau=2.0, surrogate_function=surrogate.ATan()),
+            neuron.LIFNode(tau=2.0, surrogate_function=surrogate.Sigmoid()),
             layer.MaxPool2d(2, 2),
             layer.Conv2d(16, 16, kernel_size=5, stride=1, padding=2, bias=False),
-            neuron.LIFNode(tau=2.0, surrogate_function=surrogate.ATan()),
+            neuron.LIFNode(tau=2.0, surrogate_function=surrogate.Sigmoid()),
             layer.MaxPool2d(2, 2),
             layer.Flatten(),
             layer.Linear(16 * 7 * 7, 64, bias=False),
-            neuron.LIFNode(tau=2.0, surrogate_function=surrogate.ATan()),
+            neuron.LIFNode(tau=2.0, surrogate_function=surrogate.Sigmoid()),
             layer.Linear(64, 10, bias=False),
-            neuron.LIFNode(tau=2.0, surrogate_function=surrogate.ATan()),
+            neuron.LIFNode(tau=2.0, surrogate_function=surrogate.Sigmoid()),
         )
         functional.set_step_mode(self, step_mode="m")
 
@@ -57,31 +57,60 @@ class SNN(nn.Module):
         Returns:
             th.Tensor: Output tensor, shape (batch_size, 10)
         """
-        # x = x.unsqueeze(0).repeat(self.T, 1, 1, 1, 1)
         x = x.permute(1, 0, 2, 3, 4)
         x = self.layer(x)
         return x
-
 
 class SNN_CIFAR10(nn.Module):
     def __init__(self, T: int = 20):
         super(SNN_CIFAR10, self).__init__()
         self.T = T
         self.layer = nn.Sequential(
-            layer.Conv2d(3, 32, kernel_size=5, stride=1, padding=2, bias=False),
-            neuron.LIFNode(tau=2.0, surrogate_function=surrogate.ATan()),
+            # Conv Block 1
+            layer.Conv2d(3, 64, kernel_size=3, padding=1),
+            neuron.LIFNode(tau=2.0, surrogate_function=surrogate.Sigmoid()),
+            layer.Conv2d(64, 64, kernel_size=3, padding=1),
+            neuron.LIFNode(tau=2.0, surrogate_function=surrogate.Sigmoid()),
             layer.MaxPool2d(2, 2),
-            layer.Conv2d(32, 64, kernel_size=5, stride=1, padding=2, bias=False),
-            neuron.LIFNode(tau=2.0, surrogate_function=surrogate.ATan()),
+
+            # Conv Block 2
+            layer.Conv2d(64, 128, kernel_size=3, padding=1),
+            neuron.LIFNode(tau=2.0, surrogate_function=surrogate.Sigmoid()),
+            layer.Conv2d(128, 128, kernel_size=3, padding=1),
+            neuron.LIFNode(tau=2.0, surrogate_function=surrogate.Sigmoid()),
             layer.MaxPool2d(2, 2),
-            layer.Conv2d(64, 128, kernel_size=5, stride=1, padding=2, bias=False),
-            neuron.LIFNode(tau=2.0, surrogate_function=surrogate.ATan()),
+
+            # Conv Block 3
+            layer.Conv2d(128, 256, kernel_size=3, padding=1),
+            neuron.LIFNode(tau=2.0, surrogate_function=surrogate.Sigmoid()),
+            layer.Conv2d(256, 256, kernel_size=3, padding=1),
+            neuron.LIFNode(tau=2.0, surrogate_function=surrogate.Sigmoid()),
+            layer.Conv2d(256, 256, kernel_size=3, padding=1),
+            neuron.LIFNode(tau=2.0, surrogate_function=surrogate.Sigmoid()),
             layer.MaxPool2d(2, 2),
+
+            # Conv Block 4
+            layer.Conv2d(256, 512, kernel_size=3, padding=1),
+            neuron.LIFNode(tau=2.0, surrogate_function=surrogate.Sigmoid()),
+            layer.Conv2d(512, 512, kernel_size=3, padding=1),
+            neuron.LIFNode(tau=2.0, surrogate_function=surrogate.Sigmoid()),
+            layer.Conv2d(512, 512, kernel_size=3, padding=1),
+            neuron.LIFNode(tau=2.0, surrogate_function=surrogate.Sigmoid()),
+            layer.MaxPool2d(2, 2),
+
+            # Conv Block 5
+            layer.Conv2d(512, 512, kernel_size=3, padding=1),
+            neuron.LIFNode(tau=2.0, surrogate_function=surrogate.Sigmoid()),
+            layer.Conv2d(512, 512, kernel_size=3, padding=1),
+            neuron.LIFNode(tau=2.0, surrogate_function=surrogate.Sigmoid()),
+            layer.Conv2d(512, 512, kernel_size=3, padding=1),
+            neuron.LIFNode(tau=2.0, surrogate_function=surrogate.Sigmoid()),
+            layer.AdaptiveAvgPool2d((1, 1))
+        )
+
+        self.classifier = nn.Sequential(
             layer.Flatten(),
-            layer.Linear(128 * 4 * 4, 256, bias=False),
-            neuron.LIFNode(tau=2.0, surrogate_function=surrogate.ATan()),
-            layer.Linear(256, 10, bias=False),
-            neuron.LIFNode(tau=2.0, surrogate_function=surrogate.ATan()),
+            layer.Linear(512, 10)
         )
         functional.set_step_mode(self, step_mode="m")
 
@@ -93,7 +122,7 @@ class SNN_CIFAR10(nn.Module):
         Returns:
             th.Tensor: Output tensor, shape (batch_size, 10)
         """
-        # x = x.unsqueeze(0).repeat(self.T, 1, 1, 1, 1)
         x = x.permute(1, 0, 2, 3, 4)
         x = self.layer(x)
+        x = self.classifier(x)
         return x
