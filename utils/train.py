@@ -3,10 +3,9 @@ import torch.nn as nn
 from torchvision.models import vgg16
 from dataclasses import replace
 from .spikingjelly.spikingjelly.activation_based import functional, learning
-from .spikingjelly.spikingjelly.activation_based.model import spiking_vgg
 from typing import Tuple
 from tqdm.auto import tqdm
-from .model import CNN, SNN, SNN_CIFAR10, SpikingResNet18
+from .model import CNN, SNN, SpikingResNet18
 from .adversarial_image import generate_adversial_image_fgsm, save_image
 from .config import Config
 import wandb
@@ -66,13 +65,30 @@ def train_model(config: Config, mode=None) -> Tuple[float, float]:
     # Return average loss and accuracy
     return total_loss / length, (total_acc / length) * 100
 
+def initialize_low_variance(conv_layer: nn.Conv2d, threthold : float = 0.1) -> th.Tensor:
+    """
+    Calculate the variance of the weights of a convolutional layer.
+    """
+    weight = conv_layer.weight.data
+    num_filters = weight.shape[0]
+    for i in range(num_filters):
+        var = weight[i].var().item()
+        if var < threthold :
+            weight[i].zero_()
+            print(f"Filter {i} has low variance, setting to zero.")
+    return weight
+
 # Function to evaluate the model
 def evaluate_model(config: Config) -> Tuple[float, float, (float|None)]:
     net = config.network  # Get the network from the configuration
     if config.load:
         # Load pre-trained model weights if specified
         net.load_state_dict(th.load(f"./saved/{config.method.lower()}_{config.data_set}.pt"))
-
+        # for module in net.modules():
+        #     if isinstance(module, nn.Conv2d):
+        #         # Initialize low variance weights for convolutional layers
+        #         module.weight.data = initialize_low_variance(module)
+        #         print("Filters have low variance is setting to zero.")
     net.eval()  # Set the network to evaluation mode
     total_loss, total_acc = 0, 0  # Initialize metrics
     length = 0
@@ -181,9 +197,11 @@ def train_evaluate(config: Config) -> None:
         if attack:
             adv_loss, adv_acc, attack_success_rate = evaluate_model(adv_config)
             print(f"adv_loss: {adv_loss:.4f}, adv_acc: {adv_acc:.2f}%, attack_success_rate: {attack_success_rate:.2f}%")
+            
         clean_loss, clean_acc, attack_success_rate = evaluate_model(config)
         print(f"clean_loss: {clean_loss:.4f}, clean_acc: {clean_acc:.2f}%")
         print(f'finishing evaluation {config.method.lower()}')
+        
     else:
         # if training, Log configuration to Weights & Biases
         Config = {
@@ -201,14 +219,13 @@ def train_evaluate(config: Config) -> None:
                 name = config.data_set + '_' + config.method)
         
         for epoch in range(config.num_epochs):
-            if config.method == "SNN":
-                mode = "gd"
-            elif config.method == "STDP":
+            if config.method == "STDP":
                 if epoch % 5 == 0:
                     mode = "stdp"
                 else:
                     mode = "gd"
-
+            else:
+                mode = 'gd'
             epoch_loss, epoch_acc = train_model(config, mode)
             print(f"{epoch + 1} Epoch - Loss: {epoch_loss:.4f}, Acc: {epoch_acc:.2f}%")
             wandb.log({
