@@ -18,19 +18,24 @@ def implement_parser():
     parser.add_argument("--seed", type=int, help="fixed random seed")
     parser.add_argument("--dset", type=str, help="input dataset.")
     parser.add_argument("--batch_size", type=int, default=128, help="batch size")
-    parser.add_argument("--timestep", type=int, default=50, help="batch size")
+    parser.add_argument("--timestep", type=int, default=50, help="encoding time t")
     parser.add_argument("--device", type=str, default="cuda", help="cuda or cpu")
     parser.add_argument("--learning_rate", type=float, default=1e-2, help="hyperparamter learning rate")
     parser.add_argument("--num_workers", type=int, default=8, help="number of worker")
     parser.add_argument("--epsilon", type=float, default=None, help="if Adv attack, Must be typing. type float")
-    parser.add_argument("--attack", action=argparse.BooleanOptionalAction, help="enable or disable attack, type = bool")
-
+    
+    parser.add_argument(
+        "--attack", action=argparse.BooleanOptionalAction, help="enable or disable attack, type = bool"
+                        )
     parser.add_argument(
         "--load", action=argparse.BooleanOptionalAction, help="whether load model parameter, type = bool"
-    )
-    parser.add_argument("--save", action=argparse.BooleanOptionalAction, help="Saved")
+                        )
+    parser.add_argument(
+        "--save", action=argparse.BooleanOptionalAction, help="Saved"
+                        )
 
     args = parser.parse_args()
+    
     return Config(
         method=args.net.upper(),
         data_set=args.dset.upper(),
@@ -112,3 +117,5 @@ if __name__ == "__main__":
     args.train_loader = train_loader
     args.test_loader = test_loader
     train_evaluate(args)
+    
+    
