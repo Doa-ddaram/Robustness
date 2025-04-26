@@ -58,7 +58,7 @@ def train_model(config: Config, mode=None) -> Tuple[float, float]:
 
     return total_loss / length, (total_acc / length) * 100
 
-def evaluate_model(config: Config) -> Tuple[float, float]:
+def evaluate_model(config: Config) -> Tuple[float, float, (float|None)]:
     net = config.network
     if config.load:
         net.load_state_dict(th.load(f"./saved/{config.method.lower()}_{config.data_set}.pt"))
@@ -72,11 +72,12 @@ def evaluate_model(config: Config) -> Tuple[float, float]:
 
     for i, (data, target) in tqdm(enumerate(config.test_loader), desc="Evaluation", total=len(config.test_loader)):
         data, target = data.to(config.device), target.to(config.device)
+        
         if config.attack:
             net.train()
             clean_pred = net(data).mean(0).argmax(1) if config.method != "CNN" else net(data).argmax(1)
             adv_imgs = generate_adversial_image_fgsm(net, data, target, config.epsilon)
-            save_image(data, adv_imgs, f"./images/comparison_image_{config.method.lower()}_{config.data_set}.png", target)
+            save_image(data, adv_imgs, f"./images/image_comparison/comparison_image_{config.method.lower()}_{config.data_set}.png", target)
             data = adv_imgs
             net.eval()
 
@@ -108,7 +109,6 @@ def train_evaluate(config: Config) -> None:
             if config.data_set == "MNIST"
             else SpikingResNet18(T=config.timestep).to(config.device)
         )
-
     stdp_learners, parameters_stdp, parameters_gd = [], [], []
 
     if config.method == "STDP":
@@ -127,7 +127,7 @@ def train_evaluate(config: Config) -> None:
                                 tau_post=10.0,
                                 f_pre = lambda x: 0.001 * x,
                                 f_post = lambda x: -0.001 * x
-                                                        )
+                                )
                                                     )
                         added += 1
 
@@ -167,17 +167,6 @@ def train_evaluate(config: Config) -> None:
             group = config.method,
             config = Config,
             name = config.data_set + '_' + config.method)
-    
-    # layer_num = 0
-    # layer_num_2 = 3
-    
-    # weight = config.network.layer[layer_num].weight.clone()
-    # weight2 = config.network.layer[layer_num_2].weight.clone()
-
-    # print("Weight stats after STDP:")
-    # print("min:", weight.data.min().item())
-    # print("max:", weight.data.max().item())
-    # print("mean:", weight.data.mean().item())
             
     for epoch in range(config.num_epochs):
         if config.method == "SNN":
@@ -209,18 +198,6 @@ def train_evaluate(config: Config) -> None:
                       )
         else:
             epoch_loss, epoch_acc = train_model(config, mode)
-
-            # print(f"After {mode.upper()}:", (weight - config.network.layer[layer_num].weight).abs().sum().item())
-            # print(f"After {mode.upper()}:", (weight2 - config.network.layer[layer_num_2].weight).abs().sum().item())
-
-            # weight = config.network.layer[layer_num].weight.clone()
-            # weight2 = config.network.layer[layer_num_2].weight.clone()
-
-            # print(f"Weight stats after {mode.upper()}:")
-            # print("min:", weight.data.min().item())
-            # print("max:", weight.data.max().item())
-            # print("mean:", weight.data.mean().item())
-
             print(f"{epoch + 1} Epoch - Loss: {epoch_loss:.4f}, Acc: {epoch_acc:.2f}%")
             wandb.log({
                       "train loss" : epoch_loss,

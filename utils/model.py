@@ -154,10 +154,9 @@ class SpikingResNet18(nn.Module):
         self.in_channels = 64
         self.init_layer = nn.Sequential(
             layer.Conv2d(3, 64, kernel_size=3, stride=1, padding=1, bias=False),
-            neuron.LIFNode(tau=2.0, surrogate_function=neuron.surrogate.ATan())
+            neuron.LIFNode(tau=2.0, surrogate_function=neuron.surrogate.Sigmoid())
         )
         self.layer1 = self._make_layer(64, 2, stride=1)
-
         self.layer2 = self._make_layer(128, 2, stride=2)
         self.layer3 = self._make_layer(256, 2, stride=2)
         self.layer4 = self._make_layer(512, 2, stride=2)
