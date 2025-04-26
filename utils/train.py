@@ -20,7 +20,6 @@ def train_model(config: Config, mode=None) -> Tuple[float, float]:
     # Iterate over the training data
     for i, (data, target) in tqdm(enumerate(config.train_loader), desc="Training", total=len(config.train_loader)):
         data, target = data.to(config.device), target.to(config.device)  # Move data to the configured device
-
         config.optimizer.zero_grad()  # Reset gradients for the optimizer
         if config.parameters_stdp:
             config.optimizer_stdp.zero_grad()  # Reset gradients for STDP optimizer if applicable
@@ -129,6 +128,7 @@ def evaluate_model(config: Config) -> Tuple[float, float, (float|None)]:
     for i in config.stdp_learners:
         i.enable()  # Re-enable STDP learners after evaluation
     attack_success_rate = (attack_successes / length) * 100 if config.attack else None
+    
     # Return average loss, accuracy, and attack success rate
     return total_loss / length, (total_acc / length) * 100, attack_success_rate
 

@@ -60,16 +60,19 @@ def manual_seed(seed: int = 42) -> None:
 
 
 class PoissonEncoder:
-    def __init__(self, T: int):
+    def __init__(self, use_poisson: bool = True, T: int = 10):
         self.T = T
-
+        self.use_poisson = use_poisson
     def __call__(self, image: th.Tensor) -> th.Tensor:
         """
         image: (1, 28, 28), float tensor in [0,1]
         return: (T, 1, 28, 28), binary spikes
         """
         # Poisson spike sampling across T timesteps
-        return (th.rand(self.T, *image.shape) < image).float()
+        if self.use_poisson: 
+            return (th.rand(self.T, *image.shape) < image).float()
+        else: 
+            return image.float()
 
 
 if __name__ == "__main__":
@@ -78,8 +81,8 @@ if __name__ == "__main__":
     manual_seed(args.seed)
 
     if args.data_set == "MNIST":
-        transform = transforms.Compose([transforms.ToTensor(), PoissonEncoder(T=args.timestep)])
-
+        transform = transforms.Compose([transforms.ToTensor(), PoissonEncoder(use_poisson= True if args.method != 'CNN' else False,T=args.timestep)])
+        
         MNIST_train = MNIST(root="./data", download=True, train=True, transform=transform)
         MNIST_test = MNIST(root="./data", download=True, train=False, transform=transform)
 
@@ -93,7 +96,7 @@ if __name__ == "__main__":
                 transforms.RandomCrop(32, padding=2),
                 transforms.ToTensor(),
                 transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2470, 0.2435, 0.2616)), 
-                PoissonEncoder(T=args.timestep),
+                PoissonEncoder(use_poisson= True if args.method != 'CNN' else False,T=args.timestep),
             ]
         )
 
@@ -101,7 +104,7 @@ if __name__ == "__main__":
             [
                 transforms.ToTensor(),
                 transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2470, 0.2435, 0.2616)),  
-                PoissonEncoder(T=args.timestep),
+                PoissonEncoder(use_poisson= True if args.net != 'CNN' else False,T=args.timestep),
             ]
         )
 

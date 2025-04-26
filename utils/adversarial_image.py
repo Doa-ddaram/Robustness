@@ -1,11 +1,7 @@
 import torch as th
 import torch.nn.functional as F
 import matplotlib.pyplot as plt
-import torch.nn as nn
-from torchvision import transforms
 from .spikingjelly.spikingjelly.activation_based import functional
-from .model import CNN, SNN
-
 
 def generate_adversial_image_fgsm(model, image, target, epsilon=0.05):
     """
@@ -100,11 +96,15 @@ def save_image(original_image, adversarial_image, filename, target):
     adversarial_image = adversarial_image.mean(1)
 
     r = random.randint(0, len(original_image) - 1)
-
     channel = original_image[r].shape[0]
     if channel == 1:
         original_image = original_image[r].squeeze(0).detach().cpu().numpy()
         adversarial_image = adversarial_image[r].squeeze(0).detach().cpu().numpy()
+        c = "gray"
+        label = list(range(0, 10))
+    elif channel == 28:
+        original_image = original_image[r].detach().cpu().numpy()
+        adversarial_image = adversarial_image[r].detach().cpu().numpy()
         c = "gray"
         label = list(range(0, 10))
     else:
@@ -127,76 +127,3 @@ def save_image(original_image, adversarial_image, filename, target):
     plt.tight_layout()
     plt.savefig(filename)
     plt.close()
-
-
-def compute_norm_differences(orig: th.Tensor, adv: th.Tensor):
-    """
-    :param orig: origin image (B, C, H, W)
-    :param adv: adv example (B, C, H, W)
-    :return: (mean_l2, mean_linf)
-    """
-    # norm calculate
-    diff = adv - orig
-    # L2 norm (each sample)
-    l2 = diff.view(diff.size(0), -1).norm(p=2, dim=1)  # (B,)
-    # Linf norm (each sample)
-    linf = diff.view(diff.size(0), -1).norm(p=float("inf"), dim=1)  # (B,)
-
-    # batch all avg
-    return l2.mean().item(), linf.mean().item()
-
-
-def compute_confidence(model, images: th.Tensor, labels: th.Tensor):
-    """
-    :param model: net
-    :param images: input image (B, C, H, W)
-    :param labels: label (B,)
-    :return: avg confidence
-    """
-    with th.no_grad():
-        if images.dim() == 4:
-            logits = model(images)
-        else:
-            logits = model(images).mean(0)
-        probs = F.softmax(logits, dim=1)
-        print(probs)
-        conf = probs[th.arange(len(labels)), labels]
-    return conf.mean().item()
-
-
-def compute_attack_success_rate(model, adv: th.Tensor, label: th.Tensor):
-    """
-    :param model: net
-    :param adv: adv example (B, C, H, W)
-    :param label: origin label (B,)
-    :return: adv success (0.0 ~ 1.0)
-    """
-    with th.no_grad():
-        if adv.dim() == 4:
-            preds = model(adv).argmax(dim=1)
-        else:
-            preds = model(adv).mean(0).argmax(dim=1)
-    #
-    incorrect = (preds != label).sum().item()
-    return incorrect / len(label)
-
-
-def evaluate_adversarial(model, image, adversarial_image, label, epsilon=0.1):
-    """
-    :param model: net
-    :param image : origin image
-    :param adversarial_image : adv example
-    :param label : origin label
-    :param epsilon: FGSM intensity
-    """
-    # 1)
-    conf_orig = compute_confidence(model, image, label)
-    conf_adv = compute_confidence(model, adversarial_image, label)
-
-    # 2)
-    l2, linf = compute_norm_differences(image, adversarial_image)
-
-    # 3)
-    success_rate = compute_attack_success_rate(model, adversarial_image, label)
-
-    return l2, linf, conf_orig, conf_adv, success_rate
