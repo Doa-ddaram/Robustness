@@ -5,7 +5,7 @@ from dataclasses import replace
 from .spikingjelly.spikingjelly.activation_based import functional, learning
 from typing import Tuple
 from tqdm.auto import tqdm
-from .model import CNN, SNN, SpikingResNet18
+from .model import CNN, SNN, SpikingVGG16
 from .adversarial_image import generate_adversial_image_fgsm, save_image
 from .config import Config
 import wandb
@@ -104,7 +104,7 @@ def evaluate_model(config: Config) -> Tuple[float, float, (float|None)]:
             net.train()
             clean_pred = net(data).mean(0).argmax(1) if config.method != "CNN" else net(data).argmax(1)
             adv_imgs = generate_adversial_image_fgsm(net, data, target, config.epsilon)
-            save_image(data, adv_imgs, f"./images/image_comparison/comparison_image_{config.method.lower()}_{config.data_set}.png", target)
+            #save_image(data, adv_imgs, f"./images/image_comparison/comparison_image_{config.method.lower()}_{config.data_set}.png", target)
             data = adv_imgs
             net.eval()
 
@@ -141,7 +141,7 @@ def train_evaluate(config: Config) -> None:
         net = (
             SNN(T=config.timestep).to(config.device)
             if config.data_set == "MNIST"
-            else SpikingResNet18(T=config.timestep).to(config.device)
+            else SpikingVGG16(num_classes = 10).to(config.device)
         )
     stdp_learners, parameters_stdp, parameters_gd = [], [], []
 

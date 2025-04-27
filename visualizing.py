@@ -34,8 +34,9 @@ def initialize_low_variance(conv_layer: nn.Conv2d, threthold : float = 0.1) -> t
 
 if __name__ == "__main__":
     # Create an instance of the SNN model with T=10 and move it to the GPU
-    net = SNN(T=10).to(th.device("cuda:0"))
-    net.load_state_dict(th.load(f"./saved/snn_MNIST.pt"))
+    method = "snn"
+    net = SNN().to(th.device("cuda:0"))
+    net.load_state_dict(th.load(f"./saved/{method}_MNIST.pt"))
     
     # Initialize an empty list to store Conv2D modules
     conv_list = []
@@ -46,12 +47,13 @@ if __name__ == "__main__":
             conv_list.append(module)
     
     # Create a figure and two subplots for visualizing weight maps
-    fig , axes = plt.subplots(len(conv_list), 1)
-    
+    fig, axes = plt.subplots(len(conv_list), 1)
+    fig.suptitle(f"Weight Map of {method}")
     for idx, (axe, module) in enumerate(zip(axes, conv_list)):
         if isinstance(module, nn.Conv2d):
             # Extract the weights of the Conv2D layer and clone them to CPU
             weight = module.weight.detach().cpu().clone()[:,:3]        
+            weight = th.abs(weight)
             
             # If the weight shape is not compatible, adjust it
             if weight[1].shape != 3: 
@@ -63,24 +65,26 @@ if __name__ == "__main__":
             grid = make_grid(weight, nrow=8, normalize=True, padding=1)
             grid = grid.permute(1, 2, 0)
             
+            # Set the title of the axes to indicate the content being visualized
+            axe.set_title(f"{idx + 1}th convolution Weight Map shape")
+            
             # Draw the weight map on the current axes
-             # Set the title of the axes to indicate the content being visualized
-            axe.set_title(f"{idx} Weight Map shape")
             draw_weight_map(fig, axe, grid)
             
     # Save the figure containing the weight maps to a file
-    fig.savefig(f"./images/weight_map/weight_map_snn.png")
-    print("saved weight map to ./images/weight_map/weight_map_snn.png")
+    fig.savefig(f"./images/weight_map/weight_map_{method}.png")
+    print(f"saved weight map to ./images/weight_map/weight_map_{method}.png")
     
     fig, axes = plt.subplots(len(conv_list), 1)
 
-    for axe, module in zip(axes, conv_list):
+    for idx, (axe, module) in enumerate(zip(axes, conv_list)):
         if isinstance(module, nn.Conv2d):
             
             module.data = initialize_low_variance(module)
             
             # Extract the weights of the Conv2D layer and clone them to CPU
             weight = module.weight.detach().cpu().clone()[:,:3]        
+            weight = th.abs(weight)
             
             # If the weight shape is not compatible, adjust it
             if weight[1].shape != 3: 
@@ -92,9 +96,12 @@ if __name__ == "__main__":
             grid = make_grid(weight, nrow=8, normalize=True, padding=1)
             grid = grid.permute(1, 2, 0)
             
+            # Set the title of the axes to indicate the content being visualized
+            axe.set_title(f"{idx + 1}th convolution Weight Map shape")
+            
             # Draw the weight map on the current axes
             draw_weight_map(fig, axe, grid)
             
     # Save the figure containing the weight maps to a file
-    fig.savefig(f"./images/weight_map/weight_map_snn_scailing.png")
-    print("saved weight map to ./images/weight_map/weight_map_snn_scailing.png")
+    fig.savefig(f"./images/weight_map/weight_map_{method}_scailing.png")
+    print(f"saved weight map to ./images/weight_map/weight_map_{method}_scailing.png")

@@ -94,7 +94,7 @@ def save_image(original_image, adversarial_image, filename, target):
 
     original_image = original_image.mean(1)
     adversarial_image = adversarial_image.mean(1)
-
+    
     r = random.randint(0, len(original_image) - 1)
     channel = original_image[r].shape[0]
     if channel == 1:
@@ -107,6 +107,13 @@ def save_image(original_image, adversarial_image, filename, target):
         adversarial_image = adversarial_image[r].detach().cpu().numpy()
         c = "gray"
         label = list(range(0, 10))
+    elif channel == 32:
+        original_image = original_image * 0.5 + 0.5
+        original_image = original_image[r].permute(1, 2, 0).detach().cpu().numpy()
+        adversarial_image = adversarial_image * 0.5 + 0.5
+        adversarial_image = adversarial_image[r].permute(1, 2, 0).detach().cpu().numpy()
+        c = None
+        label = ["airplane", "automobile", "bird", "cat", "deer", "dog", "frog", "horse", "ship", "truck"]
     else:
         original_image = original_image * 0.5 + 0.5
         original_image = original_image[r].permute(1, 2, 0).detach().cpu().numpy()

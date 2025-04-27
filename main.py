@@ -104,7 +104,7 @@ if __name__ == "__main__":
             [
                 transforms.ToTensor(),
                 transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2470, 0.2435, 0.2616)),  
-                PoissonEncoder(use_poisson= True if args.net != 'CNN' else False,T=args.timestep),
+                PoissonEncoder(use_poisson= True if args.method != 'CNN' else False,T=args.timestep),
             ]
         )
 
