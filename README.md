@@ -1,12 +1,65 @@
-Ready on KCC2025...
+# Robustness: STDP-based Training for Adversarially Robust Spiking Neural Networks
 
-If adversial attack about model, input epsilon.
+This repository contains the code implementation of the paper:
 
-## train CNN(model : cnn, epochs : 10, seed : 0, dataset : MNIST or CIFAR10, attack status : True, epsilon : 0.1)
+> **스파이킹 신경망의 적대적 강건성을 위한 STDP 기반 학습**  
+> 이원모, 성백륜, 고상기  
+> University of Seoul, Department of AI, CIDA Lab
+
+## 🧠 Overview
+
+Spiking Neural Networks (SNNs) are attracting attention due to their energy efficiency and biological plausibility. However, their vulnerability to adversarial attacks remains a challenge.
+
+This work explores how **STDP (Spike-Timing Dependent Plasticity)**, a biologically inspired unsupervised learning rule, can be used to improve the **adversarial robustness** of SNNs. The study compares:
+
+- Conventional CNNs
+- Surrogate gradient-based SNNs
+- STDP-enhanced SNNs
+
+against adversarial attacks such as FGSM on MNIST and CIFAR-10 datasets.
+
+## 🧪 Key Findings
+
+| Dataset  | Model       | Test Acc (%) | Adv. Acc (%) | ASR (%)   |
+|----------|-------------|--------------|--------------|-----------|
+| MNIST    | CNN         | 99.24        | 41.67        | 57.57     |
+| MNIST    | SNN         | 99.20        | 70.90        | 28.27     |
+| MNIST    | SNN + STDP  | 99.25        | 80.57        | 18.78     |
+| CIFAR-10 | CNN         | 87.09        | 50.95        | 37.31     |
+| CIFAR-10 | SNN         | 75.39        | 65.05        | 11.82     |
+| CIFAR-10 | SNN + STDP  | 75.05        | 64.32        | 10.71     |
+
+- **SNN+STDP** models showed significantly lower adversarial attack success rates compared to CNNs and vanilla SNNs.
+- STDP encourages sparse connectivity, which limits gradient-based attack pathways.
+
+## ⚙️ Repository Structure
+
+```bash
+Robustness/
+├── images/               # Visualization results
+├── utils/                # Dataset loading, attack utils, training utilities
+├── train_cifar10.sh      # Main training script on CIFAR10 dataset
+├── train_mnist.sh        # Main training script on MNIST dataset
+├── main.py               # Main implementation
+├── visualizing.py        # Visualization of learned weight sparsity
+└── README.md
+
+
+
+
+## How to run?
+
+### Train CNN
+```bash
 python -m train --net CNN -t 10 --seed 0 --dset MNIST --attack --epsilon 0.1
+```
 
-## train SNN(model : snn, epochs : 10, seed : 0, dataset : MNIST or CIFAR10, attack status : False)
+### Train SNN
+```bash
 python -m train --net SNN -t 10 --seed 0 --dset MNIST --no-attack
+```
 
-## train STDP(model : snn_stdp, epochs : 10, seed : 0, dataset : MNIST or CIFAR10, attack status : True, epsilon : 0.1)
+### Train STDP
+```bash
 python -m train --net STDP -t 10 --seed 0 --dset MNIST --attack
+```
