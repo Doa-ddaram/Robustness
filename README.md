@@ -1,4 +1,4 @@
-# Robustness: STDP-based Training for Adversarially Robust Spiking Neural Networks
+# STDP-based Training for Adversarially Robust Spiking Neural Networks
 
 This repository contains the code implementation of the paper:
 
