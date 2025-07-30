@@ -11,28 +11,30 @@ def generate_adversial_image_fgsm(model, image, target, epsilon=0.05):
     param target : target of original image
     param epsilon : adversial intensity
     """
+    
+    # Move image and target to CUDA device and detach from computation graph
     image = image.clone().detach().to(th.device("cuda:0"))
     target = target.clone().detach().to(th.device("cuda:0"))
 
-    # model = SNN(T=10).cuda()
-    # model.load_state_dict(th.load(f"./saved/snn_MNIST.pt"))
-
+    # Enable gradient computation for the image
     image.requires_grad = True
     model.zero_grad()
     y_hat = model(image)
 
+    # If model output has 3 dimensions, average over the first dimension
     if y_hat.dim() == 3:
         y_hat = y_hat.mean(0)
+        
+    # Compute cross-entropy loss between prediction and target
     loss = F.cross_entropy(y_hat, target)
-
-    # model.zero_grad()
-    # loss.backward()
-
-    # grad_sign = image.grad.sign()
-
+    
+    # Compute the sign of the gradient of the loss with respect to the image
     grad_sign = th.autograd.grad(loss, image, retain_graph=False, create_graph=False)[0].sign()
 
-    adversarial_image = image + epsilon * grad_sign  # image + pertubation
+    # Generate adversarial image by adding perturbation
+    adversarial_image = image + epsilon * grad_sign
+    
+    # Clamp the adversarial image to valid pixel range [0, 1]
     adversarial_image = th.clamp(adversarial_image, 0, 1).detach()
 
     return adversarial_image

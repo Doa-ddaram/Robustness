@@ -60,47 +60,57 @@ class SNN(nn.Module):
         x = self.layer(x)
         return x
 
-class SpikingVGG16(nn.Module):
-    def __init__(self, batch_norm: bool = False, num_classes: int = 10, init_weights: bool = True):
-        super(SpikingVGG16, self).__init__()
-        list = [64, 64, 'M', 128, 128, 'M', 256, 256, 256, 'M', 512, 512, 512, 'M', 512, 512, 512, 'M']
-        self.features = self._make_layers(list, batch_norm)
-        self.avgpool = layer.AdaptiveAvgPool2d((7, 7))
-        self.flatten = layer.Flatten()
-        self.classifier = nn.Sequential(
-            layer.Linear(512 * 7 * 7, 4096),
-            neuron.IFNode(),
-            layer.Dropout(p = 0.5),
-            layer.Linear(4096, 4096),
-            neuron.IFNode(),
-            layer.Dropout(p = 0.5),
-            layer.Linear(4096, num_classes),
+tau = 1
+class ConvBNLIFBlock(nn.Module):
+    def __init__(self, in_channels, out_channels, kernel_size=3, padding=1):
+        super().__init__()
+        self.block = nn.Sequential(
+            layer.Conv2d(in_channels, out_channels, kernel_size, stride=1, padding=padding, bias=False),
+            layer.BatchNorm2d(out_channels),
+            neuron.LIFNode(
+                v_threshold=1.0, v_reset=0.0, tau= 1.0,
+                surrogate_function=surrogate.ATan(),
+                detach_reset=True
+            )
         )
-        if init_weights:
-            self._initialize_weights()
-        functional.set_step_mode(self, step_mode='m')
-        
+
     def forward(self, x):
-        x = x.permute(1, 0, 2, 3, 4)
+        return self.block(x)
+
+
+class SNNVGG(nn.Module):
+    def __init__(self, cfg, num_classes=10):
+        super().__init__()
+        cfg = [128, 128, 'M',
+             256, 256, 'M',
+             256, 256, 256, 'M',
+             512, 512, 512, 'M',
+             512, 512, 512]
+        self.features = self._make_layers(cfg)
+        self.avgpool = layer.AdaptiveAvgPool2d((1, 1))
+        self.classifier = nn.Sequential(
+            layer.Flatten(),
+            layer.Linear(cfg[-1], num_classes)
+        )
+
+        self._initialize_weights()
+        functional.set_step_mode(self, step_mode='m')
+
+    def forward(self, x):  # x shape: [T, B, C, H, W]
+        x = x.permute(1, 0, 2, 3, 4)  # to [B, T, C, H, W]
         x = self.features(x)
         x = self.avgpool(x)
-        x = self.flatten(x)
         x = self.classifier(x)
         return x
 
-    @staticmethod
-    def _make_layers(cfg, batch_norm):
+    def _make_layers(self, cfg):
         layers = []
         in_channels = 3
         for v in cfg:
             if v == 'M':
                 layers += [layer.MaxPool2d(kernel_size=2, stride=2)]
             else:
-                conv2d = layer.Conv2d(in_channels, v, kernel_size=3, padding=1)
-                if batch_norm:
-                    layers += [conv2d, layer.BatchNorm2d(v), neuron.IFNode()]
-                else:
-                    layers += [conv2d, neuron.IFNode()]
+                layers += [ConvBNLIFBlock(in_channels, v, tau=self.tau)]
                 in_channels = v
         return nn.Sequential(*layers)
 
@@ -108,11 +118,7 @@ class SpikingVGG16(nn.Module):
         for m in self.modules():
             if isinstance(m, layer.Conv2d):
                 nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
-                if m.bias is not None:
-                    nn.init.constant_(m.bias, 0)
-            elif isinstance(m, layer.BatchNorm2d):
-                nn.init.constant_(m.weight, 1)
-                nn.init.constant_(m.bias, 0)
             elif isinstance(m, layer.Linear):
                 nn.init.normal_(m.weight, 0, 0.01)
-                nn.init.constant_(m.bias, 0)
+                if m.bias is not None:
+                    nn.init.constant_(m.bias, 0)
