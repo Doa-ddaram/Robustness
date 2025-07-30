@@ -1,9 +1,0 @@
-torch
-torchvision
-tqdm
-numpy
-wandb
-matplotlib
-spikingjelly
-tensorboard
-argparse
