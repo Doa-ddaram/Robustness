@@ -14,15 +14,16 @@ def implement_parser():
     parser = argparse.ArgumentParser()
 
     parser.add_argument("--net", type=str, help="Input Model such of (CNN or SNN or STDP)")
-    parser.add_argument("-t", type=int, help="training time step")
-    parser.add_argument("--seed", type=int, help="fixed random seed")
+    parser.add_argument("--num_epoch", "-t", type=int, help="training time step")
+    parser.add_argument("--seed", type=int, help="set fixed seed")
     parser.add_argument("--dset", type=str, help="input dataset.")
     parser.add_argument("--batch_size", type=int, default=128, help="batch size")
-    parser.add_argument("--timestep", type=int, default=50, help="encoding by timestep")
+    parser.add_argument("--timestep", "-T", type=int, default=50, help="encoding by timestep")
     parser.add_argument("--device", type=str, default="cuda", help="cuda or cpu")
     parser.add_argument("--learning_rate", type=float, default=1e-2, help="hyperparamter learning rate")
     parser.add_argument("--num_workers", type=int, default=8, help="number of worker")
     parser.add_argument("--epsilon", type=float, default=None, help="if Adv attack, Must be typing. type float")
+    parser.add_argument("--name", type=str, default="snn_mnist", help="name of the saved experiment")
     
     parser.add_argument(
         "--attack", action=argparse.BooleanOptionalAction, help="enable or disable attack, type = bool"
@@ -30,10 +31,6 @@ def implement_parser():
     parser.add_argument(
         "--load", action=argparse.BooleanOptionalAction, help="whether load model parameter, type = bool"
                         )
-    parser.add_argument(
-        "--save", action=argparse.BooleanOptionalAction, help="Saved"
-                        )
-
     args = parser.parse_args()
     
     return Config(
@@ -44,11 +41,11 @@ def implement_parser():
         num_workers=args.num_workers,
         lr=args.learning_rate,
         device=args.device,
-        save=args.save,
         load=args.load,
         attack=args.attack,
         epsilon=args.epsilon,
         timestep=args.timestep,
+        name=args.name
     )
 
 
