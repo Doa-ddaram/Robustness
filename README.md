@@ -36,30 +36,45 @@ against adversarial attacks such as FGSM on MNIST and CIFAR-10 datasets.
 
 ```bash
 Robustness/
-├── images/               # Visualization results
-├── utils/                # Dataset loading, attack utils, training utilities
+├── images/               # Visualization results (e.g., weight histogram)
+├── utils/                # Dataset loading, attack methods, and training utilities
 ├── train_cifar10.sh      # Main training script on CIFAR10 dataset
 ├── train_mnist.sh        # Main training script on MNIST dataset
-├── main.py               # Main implementation
+├── main.py               # Main training and evaluation entry point
 ├── visualizing.py        # Visualization of learned weight sparsity
+├── requirements.txt      # Python dependencies
 └── README.md
 ```
 
-
-
 ## How to run?
 
-### Train CNN
+### Run all models (with shell scripts)
+ Train all three models (CNN, SNN, STDP) at once.
+
+#### Dataset : MNIST
+```bash
+sh train_mnist.sh
+```
+
+#### Dataset : CIFAR10
+
+```bash
+sh train_cifar10.sh
+```
+
+### Train individual models (manual)
+ Train individual models selectively.
+#### Train CNN
 ```bash
 python -m train --net CNN -t 10 --seed 0 --dset MNIST --attack --epsilon 0.1
 ```
 
-### Train SNN
+#### Train SNN
 ```bash
-python -m train --net SNN -t 10 --seed 0 --dset MNIST --no-attack
+python -m train --net SNN -t 10 --seed 0 --dset MNIST --attack --epsilon 0.1
 ```
 
-### Train STDP
+#### Train STDP
 ```bash
-python -m train --net STDP -t 10 --seed 0 --dset MNIST --attack
+python -m train --net STDP -t 10 --seed 0 --dset MNIST --attack --epsilon 0.1
 ```
