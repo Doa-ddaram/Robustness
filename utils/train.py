@@ -148,7 +148,7 @@ def train_evaluate(config: Config) -> None:
 
     if config.load:
         # Load pre-trained model weights
-        print(f"Loading {config.method.lower()}_{config.data_set}.pt")
+        print(f"Loading {config.name}.pt")
         
         # Evaluate the model if pre-trained weights are loaded
         if attack:
