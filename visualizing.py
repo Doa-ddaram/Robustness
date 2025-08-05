@@ -1,11 +1,10 @@
-from utils.model import SNN, VGG16
+from utils.model import SNN, SpikingVGG16
 import torch as th
 import torch.nn as nn
-from torchvision.utils import make_grid
 import matplotlib.pyplot as plt
 
 import numpy as np
-def draw_weight_map(fig, axe, weight_map):
+def draw_weight_map(fig : plt.Figure, axe : plt.Axes, weight_map : th.Tensor):
     """
     Draw the weight map on the given axes.
 
@@ -21,12 +20,12 @@ def draw_weight_map(fig, axe, weight_map):
 def extract_first_conv_weights(model):
     """ Extract the weights of the first Conv2d layer in the model."""
     for module in model.modules():
-        if isinstance(module, th.nn.Conv2d):
+        if isinstance(module, nn.Conv2d):
             abs_weight = th.abs(module.weight.detach())
             return abs_weight.cpu().numpy().flatten()
     raise ValueError("No Conv2d layer found in the model.")
 
-def plot_first_conv_comparison(model1, model2, name1="SNN-GD", name2="SNN-GD+STDP"):
+def plot_first_conv_comparison(model1, model2, name1 : str ="SNN-GD", name2 : str ="SNN-GD+STDP"):
     w1 = extract_first_conv_weights(model1)
     w2 = extract_first_conv_weights(model2)
 
@@ -56,10 +55,17 @@ def plot_first_conv_comparison(model1, model2, name1="SNN-GD", name2="SNN-GD+STD
     plt.close()
 
 if __name__ == "__main__":
-    # Create an instance of the SNN model with T=10 and move it to the GPU
-    net = SNN().to(th.device("cuda:0"))
-    net.load_state_dict(th.load("./saved/snn_MNIST.pt"))
-    net_2 = SNN().to(th.device("cuda:0"))
-    net_2.load_state_dict(th.load("./saved/stdp_MNIST.pt"))
-    plot_first_conv_comparison(net, net_2)
+    # Example usage of the plot_first_conv_comparison function on MNIST dataset
+    net_snn_mnist = SNN().to(th.device("cuda:0"))
+    net_snn_mnist.load_state_dict(th.load("./saved/snn_MNIST.pt"))
+    net_stdp_mnist = SNN().to(th.device("cuda:0"))
+    net_stdp_mnist.load_state_dict(th.load("./saved/stdp_MNIST.pt"))
+    plot_first_conv_comparison(net_snn_mnist, net_stdp_mnist)
+
+    # Example usage of the draw_weight_map function on CIFAR10 dataset
+    # net_snn_cifar10 = SpikingVGG16(num_classes=10).to(th.device("cuda:0"))
+    # net_snn_cifar10.load_state_dict(th.load("./saved/snn_CIFAR10.pt"))
+    # net_stdp_cifar10 = SpikingVGG16(num_classes=10).to(th.device("cuda:0"))
+    # net_stdp_cifar10.load_state_dict(th.load("./saved/stdp_CIFAR10.pt"))
+    # plot_first_conv_comparison(net_snn_cifar10, net_stdp_cifar10)
     
