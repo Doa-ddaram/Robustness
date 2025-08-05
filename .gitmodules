@@ -1,0 +1,3 @@
+[submodule "utils/spikingjelly"]
+	path = DSR/cifar/modules/spikingjelly
+	url = https://github.com/doa-ddaram/spikingjelly.git
