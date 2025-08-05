@@ -1,6 +1,7 @@
 import torch.nn as nn
 import torch as th
 from .spikingjelly.spikingjelly.activation_based import neuron, surrogate, functional, layer
+from typing import List
 
 
 class CNN(nn.Module):
@@ -31,8 +32,9 @@ class CNN(nn.Module):
 
 
 class SNN(nn.Module):
-    def __init__(self):
+    def __init__(self, T: int = 20):
         super(SNN, self).__init__()
+        # self.T = T
         self.layer = nn.Sequential(
             layer.Conv2d(1, 16, kernel_size=5, stride=1, padding=2, bias=False),
             neuron.LIFNode(tau=2.0, surrogate_function=surrogate.Sigmoid()),
@@ -51,24 +53,25 @@ class SNN(nn.Module):
     def forward(self, x: th.Tensor) -> th.Tensor:
         """
         Args:
-            x (th.Tensor) : Input tensor, shape (batch_size, 1, 28, 28)
+            x (th.Tensor) : Input tensor, shape (batch_size, time_step, 1, 28, 28)
 
         Returns:
             th.Tensor: Output tensor, shape (batch_size, 10)
         """
-        x = x.permute(1, 0, 2, 3, 4)
+        x = x.permute(1, 0, 2, 3, 4) # Change shape to (time_step, batch_size, channels, height, width)
         x = self.layer(x)
         return x
 
-tau = 1
+tau = 1 + 1e-3  # Default tau value for LIF neurons
 class ConvBNLIFBlock(nn.Module):
-    def __init__(self, in_channels, out_channels, kernel_size=3, padding=1):
+    def __init__(self, in_channels, out_channels, kernel_size=3, padding=1, tau : float = tau):
         super().__init__()
+        self.tau = tau
         self.block = nn.Sequential(
             layer.Conv2d(in_channels, out_channels, kernel_size, stride=1, padding=padding, bias=False),
             layer.BatchNorm2d(out_channels),
             neuron.LIFNode(
-                v_threshold=1.0, v_reset=0.0, tau= 1.0,
+                v_threshold=1.0, v_reset=0.0, tau= self.tau,
                 surrogate_function=surrogate.ATan(),
                 detach_reset=True
             )
@@ -78,14 +81,9 @@ class ConvBNLIFBlock(nn.Module):
         return self.block(x)
 
 
-class SNNVGG(nn.Module):
-    def __init__(self, cfg, num_classes=10):
+class SpikingVGG(nn.Module):
+    def __init__(self, cfg : List = None, num_classes : int = 10, T : int = 20):
         super().__init__()
-        cfg = [128, 128, 'M',
-             256, 256, 'M',
-             256, 256, 256, 'M',
-             512, 512, 512, 'M',
-             512, 512, 512]
         self.features = self._make_layers(cfg)
         self.avgpool = layer.AdaptiveAvgPool2d((1, 1))
         self.classifier = nn.Sequential(
@@ -96,8 +94,15 @@ class SNNVGG(nn.Module):
         self._initialize_weights()
         functional.set_step_mode(self, step_mode='m')
 
-    def forward(self, x):  # x shape: [T, B, C, H, W]
-        x = x.permute(1, 0, 2, 3, 4)  # to [B, T, C, H, W]
+    def forward(self, x: th.Tensor) -> th.Tensor:
+        """
+        Args:
+            x (th.Tensor) : Input tensor, shape (batch_size, time_step, 3, 32, 32)
+
+        Returns:
+            th.Tensor: Output tensor, shape (batch_size, 10)
+        """
+        x = x.permute(1, 0, 2, 3, 4)  # Change shape to (time_step, batch_size, channels, height, width)
         x = self.features(x)
         x = self.avgpool(x)
         x = self.classifier(x)
@@ -110,7 +115,7 @@ class SNNVGG(nn.Module):
             if v == 'M':
                 layers += [layer.MaxPool2d(kernel_size=2, stride=2)]
             else:
-                layers += [ConvBNLIFBlock(in_channels, v, tau=self.tau)]
+                layers += [ConvBNLIFBlock(in_channels, v, tau=tau)]
                 in_channels = v
         return nn.Sequential(*layers)
 
@@ -122,3 +127,25 @@ class SNNVGG(nn.Module):
                 nn.init.normal_(m.weight, 0, 0.01)
                 if m.bias is not None:
                     nn.init.constant_(m.bias, 0)
+                    
+def _spiking_vgg(cfg : List = None, num_classes : int = 10, T : int =20):
+    """Creates a SpikingVGG model with the specified configuration."""
+    return SpikingVGG(cfg=cfg, num_classes=num_classes, T=T)
+
+def SpikingVGG11(num_classes : int =10, T : int =20):
+    """Creates a SpikingVGG11 model."""
+    cfg = [64, 'M', 
+           128, 'M', 
+           256, 256, 'M', 
+           512, 512, 'M', 
+           512, 512]
+    return _spiking_vgg(cfg=cfg, num_classes=num_classes, T=T)
+
+def SpikingVGG16(num_classes : int =10, T : int =20):
+    """Creates a SpikingVGG16 model."""
+    cfg = [64, 64, 'M',
+           128, 128, 'M',
+           256, 256, 256, 'M',
+           512, 512, 512, 'M',
+           512, 512, 512]
+    return _spiking_vgg(cfg=cfg, num_classes=num_classes, T=T)

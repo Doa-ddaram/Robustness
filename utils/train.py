@@ -6,9 +6,10 @@ from .spikingjelly.spikingjelly.activation_based import functional, learning
 from typing import Tuple
 from tqdm.auto import tqdm
 from .model import CNN, SNN, SpikingVGG16
-from .adversarial_image import generate_adversial_image_fgsm, save_image
+from .adversarial_image import generate_adversial_image_fgsm
 from .config import Config
 import wandb
+import os
 
 # Training function
 # Function to train the model
@@ -21,34 +22,25 @@ def train_model(config: Config, mode=None) -> Tuple[float, float]:
     for i, (data, target) in tqdm(enumerate(config.train_loader), desc="Training", total=len(config.train_loader)):
         data, target = data.to(config.device), target.to(config.device)  # Move data to the configured device
         config.optimizer.zero_grad()  # Reset gradients for the optimizer
-        if config.parameters_stdp:
-            config.optimizer_stdp.zero_grad()  # Reset gradients for STDP optimizer if applicable
 
         # Forward pass through the network
         y_hat = net(data).mean(0) if config.method != "CNN" else net(data)
+        
         loss = config.loss_fn(y_hat, target)  # Compute the loss
 
         # STDP training mode
         if mode == "stdp":
-            if config.parameters_stdp:
-                for learner in config.stdp_learners:
-                    with th.no_grad():
-                        learner.step(on_grad=True)  # Perform STDP updates
-
-        # Gradient descent training mode
-        if mode == "gd":
+            for learner in config.stdp_learners:
+                learner.step(on_grad=True)  # Perform STDP updates
+                learner.synapse.weight.data.clamp_(-10, 5.0)  # Clamp weights to a range
+        else:
             loss.backward()  # Backpropagate the loss
             config.optimizer.step()  # Update weights using the optimizer
 
-        if mode == "stdp":
-            if config.parameters_stdp:
-                config.optimizer_stdp.step()  # Update STDP parameters
-                with th.no_grad():
-                    for learner in config.stdp_learners:
-                        learner.synapse.weight.data.clamp_(-10, 5.0)  # Clamp weights to a range
-
-        functional.reset_net(net)  # Reset the network's state
-        if config.parameters_stdp:
+        if config.method != "CNN":        
+            functional.reset_net(net)  # Reset the network's state
+        
+        if config.stdp_learners:
             for learner in config.stdp_learners:
                 learner.reset()  # Reset STDP learners
 
@@ -57,57 +49,36 @@ def train_model(config: Config, mode=None) -> Tuple[float, float]:
         total_acc += (y_hat.argmax(1) == target).sum().item()
         length += len(target)
 
-        # Free up memory
-        del loss, y_hat, target, data
-        th.cuda.empty_cache()
-
     # Return average loss and accuracy
     return total_loss / length, (total_acc / length) * 100
-
-def initialize_low_variance(conv_layer: nn.Conv2d, threthold : float = 0.1) -> th.Tensor:
-    """
-    Calculate the variance of the weights of a convolutional layer.
-    """
-    weight = conv_layer.weight.data
-    num_filters = weight.shape[0]
-    for i in range(num_filters):
-        var = weight[i].var().item()
-        if var < threthold :
-            weight[i].zero_()
-            print(f"Filter {i} has low variance, setting to zero.")
-    return weight
 
 # Function to evaluate the model
 def evaluate_model(config: Config) -> Tuple[float, float, (float|None)]:
     net = config.network  # Get the network from the configuration
     if config.load:
         # Load pre-trained model weights if specified
-        net.load_state_dict(th.load(f"./saved/{config.method.lower()}_{config.data_set}.pt"))
-        # for module in net.modules():
-        #     if isinstance(module, nn.Conv2d):
-        #         # Initialize low variance weights for convolutional layers
-        #         module.weight.data = initialize_low_variance(module)
-        #         print("Filters have low variance is setting to zero.")
+        assert os.path.isfile(
+            f'./saved/{config.name}.pt'), 'Error: no checkpoint directory found!'
+        net.load_state_dict(th.load(f"./saved/{config.name}.pt"))
+
     net.eval()  # Set the network to evaluation mode
     total_loss, total_acc = 0, 0  # Initialize metrics
     length = 0
     attack_successes = 0  # Track adversarial attack success rate
+    
     for i in config.stdp_learners:
         i.disable()  # Disable STDP learners during evaluation
-
+        
     # Iterate over the test data
     for i, (data, target) in tqdm(enumerate(config.test_loader), desc="Evaluation", total=len(config.test_loader)):
         data, target = data.to(config.device), target.to(config.device)  # Move data to the configured device
-        
         if config.attack:
             # Generate adversarial examples if attack mode is enabled
             net.train()
             clean_pred = net(data).mean(0).argmax(1) if config.method != "CNN" else net(data).argmax(1)
             adv_imgs = generate_adversial_image_fgsm(net, data, target, config.epsilon)
-            #save_image(data, adv_imgs, f"./images/image_comparison/comparison_image_{config.method.lower()}_{config.data_set}.png", target)
             data = adv_imgs
             net.eval()
-
         with th.no_grad():
             # Forward pass through the network
             y_hat = net(data).mean(0) if config.method != "CNN" else net(data)
@@ -125,6 +96,7 @@ def evaluate_model(config: Config) -> Tuple[float, float, (float|None)]:
         if config.method != "CNN":
             functional.reset_net(net)  # Reset the SNN's state
         length += len(target)
+        
     for i in config.stdp_learners:
         i.enable()  # Re-enable STDP learners after evaluation
     attack_success_rate = (attack_successes / length) * 100 if config.attack else None
@@ -143,8 +115,8 @@ def train_evaluate(config: Config) -> None:
             if config.data_set == "MNIST"
             else SpikingVGG16(num_classes = 10).to(config.device)
         )
-    stdp_learners, parameters_stdp, parameters_gd = [], [], []
-
+        
+    stdp_learners = []
     if config.method == "STDP":
         added = 0
         for layers in net.modules():
@@ -164,25 +136,10 @@ def train_evaluate(config: Config) -> None:
                                 )
                                                     )
                         added += 1
-
-        for module in net.modules():
-            if isinstance(module, nn.Conv2d) and added > 0:
-                parameters_stdp.extend(module.parameters())
-    else:
-        parameters_gd = net.parameters()
-
-    all_parameters = list(net.parameters())
-    parameters_stdp_set = set(parameters_stdp)
-    parameters_gd = [p for p in all_parameters if p not in parameters_stdp_set]
-
-    config.optimizer = th.optim.Adam(list(parameters_stdp) + list(parameters_gd), lr=config.lr, weight_decay=0)
+                        
+    config.optimizer = th.optim.Adam(net.parameters(), lr=config.lr, weight_decay=0)
     config.network = net
-    config.parameters_stdp = parameters_stdp
     config.stdp_learners = stdp_learners
-    config.optimizer_stdp = (
-        th.optim.SGD(config.parameters_stdp, lr=config.lr * 0.001, momentum=0.0) if config.parameters_stdp else None
-    )
-
     attack = config.attack
     if attack:
         # Create separate configurations for clean and adversarial evaluation
@@ -197,7 +154,6 @@ def train_evaluate(config: Config) -> None:
         if attack:
             adv_loss, adv_acc, attack_success_rate = evaluate_model(adv_config)
             print(f"adv_loss: {adv_loss:.4f}, adv_acc: {adv_acc:.2f}%, attack_success_rate: {attack_success_rate:.2f}%")
-            
         clean_loss, clean_acc, attack_success_rate = evaluate_model(config)
         print(f"clean_loss: {clean_loss:.4f}, clean_acc: {clean_acc:.2f}%")
         print(f'finishing evaluation {config.method.lower()}')
@@ -220,7 +176,7 @@ def train_evaluate(config: Config) -> None:
         
         for epoch in range(config.num_epochs):
             if config.method == "STDP":
-                if epoch % 5 == 0:
+                if epoch % 5 == 4:
                     mode = "stdp"
                 else:
                     mode = "gd"
@@ -234,8 +190,7 @@ def train_evaluate(config: Config) -> None:
                     },
                         step = epoch
                         )
-            if config.save:
-                th.save(net.state_dict(), f"./saved/{config.method.lower()}_{config.data_set}.pt")
+            th.save(net.state_dict(), f"./saved/{config.name}.pt")
 
             if mode == "gd":
                 if attack:
