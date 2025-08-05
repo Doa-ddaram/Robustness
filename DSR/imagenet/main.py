@@ -16,8 +16,6 @@ import torch.utils.data
 import torch.utils.data.distributed
 import torchvision.transforms as transforms
 import torchvision.datasets as datasets
-import preresnet_snn, preresnet_ann, preresnet_cal_Vth
-import collections
 
 parser = argparse.ArgumentParser(description='PyTorch ImageNet Training')
 parser.add_argument('--data', metavar='DIR', default='./data/imagenet',

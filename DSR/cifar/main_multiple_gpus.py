@@ -22,10 +22,10 @@ from PIL.Image import Image
 import math
 import torch.distributed as dist
 import collections
-from utils import Bar, Logger, AverageMeter, accuracy, mkdir_p, savefig
+from modules.utils import Bar, Logger, AverageMeter, accuracy, mkdir_p, savefig
 from modules import preresnet, vgg
-from utils.cifar10_dvs import CIFAR10DVS
-from spikingjelly.activation_based import learning
+from modules.utils.cifar10_dvs import CIFAR10DVS
+from modules.spikingjelly.spikingjelly.activation_based import learning
 
 parser = argparse.ArgumentParser(description='PyTorch SNN Training')
 # Basic settings
