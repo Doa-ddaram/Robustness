@@ -18,22 +18,27 @@ Spiking Neural Networks (SNNs) have gained attention due to their energy efficie
 
 ```bash
 Robustness/
-├── images/                 # Visualization results (e.g., spike raster, weight sparsity)
-├── utils/                  # Dataset loading, attack methods (FGSM, PGD), training utilities
-├── modules/                # Model definitions (CNN, SNN, DSR-SNN)
-├── train_cifar10.sh        # Training script for CIFAR10 dataset
-├── train_mnist.sh          # Training script for MNIST dataset
-├── main.py                 # Main training and evaluation entry point
-├── dsr_trainer.py          # DSR-based training pipeline
-├── stdp_trainer.py         # STDP-based unsupervised training pipeline
+├── requirements.txt        
+├── modules/                # Model definitions (SNN, DSR-SNN)
+├── imagenet/               # ImageNet-1K training and evaluation code
+│   └── main.py             
+├── cifar/                  # CIFAR-10 training and evaluation code
+│    └── main.py             
+├── train_cifar10.sh        # Training script for CIFAR-10 dataset
+├── train_imagenet1k.sh     # Training script for ImageNet-1K dataset
 ├── visualizing.py          # Visualization of spikes and weights
-├── requirements.txt        # Python dependencies
-└── README.md
+└── README.md               # Project documentation
 ```
 
 ## How to run?
 
-Implementation is planned soon.
+#### Train Dataset : CIFAR10
+
+python -m cifar.main --path ./data --dataset cifar10 --model [model_name] --name [checkpoint_name]
+
+#### Train Dataset : ImageNet-1K
+
+python -m imagenet.main --path ./data --dataset imagenet1k --model [model_name] --name [checkpoint_name]
 
 ## 📌 Notes
 * This branch focuses on DSR-based spike representation.
