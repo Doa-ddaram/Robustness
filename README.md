@@ -34,11 +34,15 @@ Robustness/
 
 #### Train Dataset : CIFAR10
 
+```bash
 python -m cifar.main --path ./data --dataset cifar10 --model [model_name] --name [checkpoint_name]
+```
 
 #### Train Dataset : ImageNet-1K
 
+```bash
 python -m imagenet.main --path ./data --dataset imagenet1k --model [model_name] --name [checkpoint_name]
+```
 
 ## 📌 Notes
 * This branch focuses on DSR-based spike representation.
