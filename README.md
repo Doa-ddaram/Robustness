@@ -15,6 +15,8 @@ Spiking Neural Networks (SNNs) have gained attention due to their energy efficie
 | CIFAR-10 | SNN + STDP  | 0.0          | 0.0          | 0.0       |
 
 ## ⚙️ Repository Structure
+
+```bash
 Robustness/
 ├── images/                 # Visualization results (e.g., spike raster, weight sparsity)
 ├── utils/                  # Dataset loading, attack methods (FGSM, PGD), training utilities
@@ -27,6 +29,7 @@ Robustness/
 ├── visualizing.py          # Visualization of spikes and weights
 ├── requirements.txt        # Python dependencies
 └── README.md
+```
 
 ## How to run?
 
