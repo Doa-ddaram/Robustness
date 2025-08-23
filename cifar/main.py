@@ -19,6 +19,7 @@ import collections
 from modules.utils import Bar, Logger, AverageMeter, accuracy, mkdir_p, savefig
 from modules import preresnet, vgg
 from modules.utils.cifar10_dvs import CIFAR10DVS
+from typing import Optional
 
 parser = argparse.ArgumentParser(description='PyTorch SNN Training')
 # Basic settings
@@ -71,16 +72,17 @@ state = {k: v for k, v in args._get_kwargs()}
 
 # Use CUDA
 use_cuda = torch.cuda.is_available()
-print(torch.cuda.is_available())
 device = 'cuda' if use_cuda else 'cpu'
 
-# Random seed
-if args.manualSeed is None:
-    args.manualSeed = random.randint(1, 10000)
-random.seed(args.manualSeed)
-torch.manual_seed(args.manualSeed)
-if use_cuda:
-    torch.cuda.manual_seed_all(args.manualSeed)
+seed = args.manualSeed
+def manual_seed(seed: Optional[int] = None) -> None:
+    # Random seed
+    if seed is None:
+        seed = random.randint(1, 10000)
+    random.seed(seed)
+    torch.manual_seed(seed)
+    if use_cuda:
+        torch.cuda.manual_seed_all(seed)
 
 best_acc = 0  # best test accuracy
 current_iter = 0
@@ -225,11 +227,15 @@ def main():
 
     # Train and val
     for epoch in range(start_epoch, args.epochs):
-        adjust_learning_rate(optimizer, epoch)
-
         print('\nEpoch: [%d | %d] LR: %f' % (epoch + 1, args.epochs, state['lr']))
 
-        train_loss, train_acc = train(trainloader, model, criterion, optimizer, warmup=args.warmup)
+        if epoch % 5 == 4:
+            train_loss, train_acc = train_stdp(trainloader, model, criterion)
+            print('\nEpoch: [%d | %d]' % (epoch + 1, args.epochs))
+        else:
+            adjust_learning_rate(optimizer, epoch)
+            print('\nEpoch: [%d | %d] LR: %f' % (epoch + 1, args.epochs, state['lr']))
+            train_loss, train_acc = train(trainloader, model, criterion, optimizer, warmup=args.warmup)
         test_loss, test_acc = test(testloader, model, criterion)
 
         # append logger file
@@ -293,6 +299,57 @@ def train(trainloader, model, criterion, optimizer, warmup=0):
         optimizer.zero_grad(set_to_none=True)
         loss.backward()
         optimizer.step()
+
+        # measure elapsed time
+        batch_time.update(time.time() - end)
+        end = time.time()
+
+        # plot progress
+        bar.suffix = '({batch}/{size}) Data: {data:.3f}s | Batch: {bt:.3f}s | Total: {total:} | ETA: {eta:} | Loss: {loss:.4f} | top1: {top1: .4f} | top5: {top5: .4f}'.format(
+            batch=batch_idx + 1,
+            size=len(trainloader),
+            data=data_time.avg,
+            bt=batch_time.avg,
+            total=bar.elapsed_td,
+            eta=bar.eta_td,
+            loss=losses.avg,
+            top1=top1.avg,
+            top5=top5.avg,
+        )
+        bar.next()
+    bar.finish()
+    return (losses.avg, top1.avg)
+
+def train_stdp(trainloader, model, criterion):
+    # switch to train mode
+    model.train()
+
+    batch_time = AverageMeter()
+    data_time = AverageMeter()
+    losses = AverageMeter()
+    top1 = AverageMeter()
+    top5 = AverageMeter()
+    end = time.time()
+
+    bar = Bar('Processing', max=len(trainloader))
+
+    global current_iter
+
+    for batch_idx, (inputs, targets) in enumerate(trainloader):
+        # measure data loading time
+        data_time.update(time.time() - end)
+
+        inputs, targets = inputs.to(device), targets.to(device)
+
+        # compute output
+        outputs = model(inputs)
+        loss = criterion(outputs, targets)
+
+        # measure accuracy and record loss
+        prec1, prec5 = accuracy(outputs.data, targets.data, topk=(1, 5))
+        losses.update(loss.data.item(), inputs.size(0))
+        top1.update(prec1.item(), inputs.size(0))
+        top5.update(prec5.item(), inputs.size(0))
 
         # measure elapsed time
         batch_time.update(time.time() - end)
