@@ -7,7 +7,6 @@ import time
 import random
 import torch
 import torch.nn as nn
-import torch.nn.parallel
 import torch.backends.cudnn as cudnn
 import torch.optim as optim
 import torch.utils.data as data
@@ -17,9 +16,9 @@ import torch.nn.functional as F
 import numpy as np
 import math
 import collections
-from utils import Bar, Logger, AverageMeter, accuracy, mkdir_p, savefig
+from modules.utils import Bar, Logger, AverageMeter, accuracy, mkdir_p, savefig
 from modules import preresnet, vgg
-from utils.cifar10_dvs import CIFAR10DVS
+from modules.utils.cifar10_dvs import CIFAR10DVS
 
 parser = argparse.ArgumentParser(description='PyTorch SNN Training')
 # Basic settings
@@ -72,10 +71,8 @@ state = {k: v for k, v in args._get_kwargs()}
 
 # Use CUDA
 use_cuda = torch.cuda.is_available()
+print(torch.cuda.is_available())
 device = 'cuda' if use_cuda else 'cpu'
-
-#FP16
-scaler = torch.cuda.amp.GradScaler()
 
 # Random seed
 if args.manualSeed is None:
@@ -175,7 +172,7 @@ def main():
 
     model = eval(args.model + '(snn_setting,num_classes=' + str(num_classes) + ')')
     if use_cuda:
-        model = torch.nn.DataParallel(model)
+        print(torch.cuda.device_count(), 'GPUs are available.')
         cudnn.benchmark = True
     model = model.to(device)
 
@@ -281,7 +278,6 @@ def train(trainloader, model, criterion, optimizer, warmup=0):
         data_time.update(time.time() - end)
 
         inputs, targets = inputs.to(device), targets.to(device)
-        inputs, targets = torch.autograd.Variable(inputs), torch.autograd.Variable(targets)
 
         # compute output
         outputs = model(inputs)
@@ -297,9 +293,6 @@ def train(trainloader, model, criterion, optimizer, warmup=0):
         optimizer.zero_grad(set_to_none=True)
         loss.backward()
         optimizer.step()
-        # scaler.scale(loss).backward()
-        # scaler.step(optimizer)
-        # scaler.update()
 
         # measure elapsed time
         batch_time.update(time.time() - end)
@@ -341,7 +334,6 @@ def test(testloader, model, criterion):
         data_time.update(time.time() - end)
 
         inputs, targets = inputs.to(device), targets.to(device)
-        inputs, targets = torch.autograd.Variable(inputs), torch.autograd.Variable(targets)
 
         # compute output
         outputs = model(inputs)

@@ -20,10 +20,10 @@ def weight_rate_spikes(data, timesteps, tau, delta_t):
     return (weight * data_reshape).sum(dim=len(chw)+1) / weight.sum()
 
 
-def sum_tensor(tensor: torch.Tensor) -> torch.Tensor:
-    rt = tensor.clone()
-    dist.all_reduce(rt, op=dist.ReduceOp.SUM)
-    return rt
+# def sum_tensor(tensor: torch.Tensor) -> torch.Tensor:
+#     rt = tensor.clone()
+#     dist.all_reduce(rt, op=dist.ReduceOp.SUM)
+#     return rt
 
 
 class IFFunction(torch.autograd.Function):
@@ -64,8 +64,8 @@ class IFFunction(torch.autograd.Function):
             Vth_grad = grad_output_coding.clone()
             Vth_grad[input_rate_coding <= Vth] = 0
             Vth_grad = torch.sum(Vth_grad)
-            if torch.cuda.device_count() != 1:
-                Vth_grad = sum_tensor(Vth_grad)
+            # if torch.cuda.device_count() != 1:
+            #     Vth_grad = sum_tensor(Vth_grad)
 
             return input_grad, None, Vth_grad, None
 
@@ -147,8 +147,8 @@ def lif_grad(Vth, delta_t, grad_output_coding, input_rate_coding, tau, timesteps
     Vth_grad = grad_output_coding.clone()
     Vth_grad[input_rate_coding <= Vth / delta_t * tau] = 0
     Vth_grad = torch.sum(Vth_grad) * delta_t
-    if torch.cuda.device_count() != 1:
-        Vth_grad = sum_tensor(Vth_grad)
+    # if torch.cuda.device_count() != 1:
+    #     Vth_grad = sum_tensor(Vth_grad)
 
     input_grad = torch.cat([input_grad for _ in range(timesteps)], 0) / timesteps
     return input_grad, Vth_grad
