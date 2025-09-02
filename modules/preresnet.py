@@ -1,6 +1,6 @@
 import torch.nn as nn
 import torch
-from .neuron import LIFNeuron, IFNeuron
+# from .neuron import LIFNeuron, IFNeuron
 from .neuron import rate_spikes, weight_rate_spikes
 from .spikingjelly.spikingjelly.activation_based.neuron import DSRLIFNode, DSRIFNode
 
@@ -10,8 +10,7 @@ class PreActBlock(nn.Module):
 
     def __init__(self, in_channels, out_channels, stride, dropout, snn_setting, neuron_type):
         super(PreActBlock, self).__init__()
-        self.timesteps = snn_setting['timesteps']
-        self.bn1 = nn.BatchNorm2d(in_channels)
+        self.bn1 = nn.BatchNorm2d(out_channels)
 
         self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=stride, padding=1)
         self.bn2 = nn.BatchNorm2d(out_channels)
@@ -25,19 +24,38 @@ class PreActBlock(nn.Module):
             self.shortcut = nn.Sequential()
 
         if neuron_type == 'lif':
-            self.relu1 = LIFNeuron(snn_setting)
-            self.relu2 = LIFNeuron(snn_setting)
+            self.relu1 = DSRLIFNode(T = snn_setting['timesteps'],
+                                    v_threshold_training= snn_setting['train_Vth'],
+                                    v_threshold = snn_setting['Vth'],
+                                    tau = snn_setting['tau'],
+                                    delta_t = snn_setting['delta_t'],
+                                    alpha = snn_setting['alpha'],
+                                    v_threshold_lower_bound= snn_setting['Vth_bound'])
+            self.relu2 = DSRLIFNode(T = snn_setting['timesteps'],
+                                    v_threshold_training= snn_setting['train_Vth'],
+                                    v_threshold = snn_setting['Vth'],
+                                    tau = snn_setting['tau'],
+                                    delta_t = snn_setting['delta_t'],
+                                    alpha = snn_setting['alpha'],
+                                    v_threshold_lower_bound= snn_setting['Vth_bound'])
         elif neuron_type == 'if':
-            self.relu1 = IFNeuron(snn_setting)
-            self.relu2 = IFNeuron(snn_setting)
+            self.relu1 = DSRIFNode(T = snn_setting['timesteps'],
+                                    v_threshold_training= snn_setting['train_Vth'],
+                                    v_threshold = snn_setting['Vth'],
+                                    alpha = snn_setting['alpha'],
+                                    v_threshold_lower_bound= snn_setting['Vth_bound'])
+            self.relu2 = DSRIFNode(T = snn_setting['timesteps'],
+                                    v_threshold_training= snn_setting['train_Vth'],
+                                    v_threshold = snn_setting['Vth'],
+                                    alpha = snn_setting['alpha'],
+                                    v_threshold_lower_bound= snn_setting['Vth_bound'])
         else:
             raise NotImplementedError('Please use IF or LIF model.')
 
 
-    def forward(self, x):
-        x = self.relu1(self.bn1(x))
-        out = self.conv1(x)
-        out = self.conv2(self.dropout(self.relu2(self.bn2(out))))
+    def forward(self, x: torch.Tensor):
+        out = self.relu1(self.bn1(self.conv1(x)))
+        out = self.relu2(self.bn2(self.conv2(self.dropout(out))))
         out = out + self.shortcut(x)
         return out
 
@@ -65,13 +83,43 @@ class PreActBottleneck(nn.Module):
             self.shortcut = nn.Sequential()
 
         if neuron_type == 'lif':
-            self.relu1 = LIFNeuron(snn_setting)
-            self.relu2 = LIFNeuron(snn_setting)
-            self.relu3 = LIFNeuron(snn_setting)
+            self.relu1 = DSRLIFNode(T = snn_setting['timesteps'],
+                                    v_threshold_training= snn_setting['train_Vth'],
+                                    v_threshold = snn_setting['Vth'],
+                                    tau = snn_setting['tau'],
+                                    delta_t = snn_setting['delta_t'],
+                                    alpha = snn_setting['alpha'],
+                                    v_threshold_lower_bound= snn_setting['Vth_bound'])
+            self.relu2 = DSRLIFNode(T = snn_setting['timesteps'],
+                                    v_threshold_training= snn_setting['train_Vth'],
+                                    v_threshold = snn_setting['Vth'],
+                                    tau = snn_setting['tau'],
+                                    delta_t = snn_setting['delta_t'],
+                                    alpha = snn_setting['alpha'],
+                                    v_threshold_lower_bound= snn_setting['Vth_bound'])
+            self.relu3 = DSRLIFNode(T = snn_setting['timesteps'],
+                                    v_threshold_training= snn_setting['train_Vth'],
+                                    v_threshold = snn_setting['Vth'],
+                                    tau = snn_setting['tau'],
+                                    delta_t = snn_setting['delta_t'],
+                                    alpha = snn_setting['alpha'],
+                                    v_threshold_lower_bound= snn_setting['Vth_bound'])
         elif neuron_type == 'if':
-            self.relu1 = IFNeuron(snn_setting)
-            self.relu2 = IFNeuron(snn_setting)
-            self.relu3 = IFNeuron(snn_setting)
+            self.relu1 = DSRIFNode(T = snn_setting['timesteps'],
+                                    v_threshold_training= snn_setting['train_Vth'],
+                                    v_threshold = snn_setting['Vth'],
+                                    alpha = snn_setting['alpha'],
+                                    v_threshold_lower_bound= snn_setting['Vth_bound'])
+            self.relu2 = DSRIFNode(T = snn_setting['timesteps'],
+                                    v_threshold_training= snn_setting['train_Vth'],
+                                    v_threshold = snn_setting['Vth'],
+                                    alpha = snn_setting['alpha'],
+                                    v_threshold_lower_bound= snn_setting['Vth_bound'])
+            self.relu3 = DSRIFNode(T = snn_setting['timesteps'],
+                                    v_threshold_training= snn_setting['train_Vth'],
+                                    v_threshold = snn_setting['Vth'],
+                                    alpha = snn_setting['alpha'],
+                                    v_threshold_lower_bound= snn_setting['Vth_bound'])
         else:
             raise NotImplementedError('Please use IF or LIF model.')
 
@@ -112,16 +160,53 @@ class PreActResNet(nn.Module):
         self.bn2 = nn.BatchNorm1d(num_classes)
 
         if neuron_type == 'lif':
-            self.relu1 = LIFNeuron(snn_setting)
-            self.relu2 = LIFNeuron(snn_setting)
-            self.relu3 = LIFNeuron(snn_setting)
+            self.relu = DSRLIFNode(T = snn_setting['timesteps'],
+                                    v_threshold_training= snn_setting['train_Vth'],
+                                    v_threshold = snn_setting['Vth'],
+                                    tau = snn_setting['tau'],
+                                    delta_t = snn_setting['delta_t'],
+                                    alpha = snn_setting['alpha'],
+                                    v_threshold_lower_bound= snn_setting['Vth_bound'])
+            self.relu1 = DSRLIFNode(T = snn_setting['timesteps'],
+                                    v_threshold_training= snn_setting['train_Vth'],
+                                    v_threshold = snn_setting['Vth'],
+                                    tau = snn_setting['tau'],
+                                    delta_t = snn_setting['delta_t'],
+                                    alpha = snn_setting['alpha'],
+                                    v_threshold_lower_bound= snn_setting['Vth_bound'])
+            self.relu2 = DSRLIFNode(T = snn_setting['timesteps'],
+                                    v_threshold_training= snn_setting['train_Vth'],
+                                    v_threshold = snn_setting['Vth'],
+                                    tau = snn_setting['tau'],
+                                    delta_t = snn_setting['delta_t'],
+                                    alpha = snn_setting['alpha'],
+                                    v_threshold_lower_bound= snn_setting['Vth_bound'])
+            self.relu3 = DSRLIFNode(T = snn_setting['timesteps'],
+                                    v_threshold_training= snn_setting['train_Vth'],
+                                    v_threshold = snn_setting['Vth'],
+                                    tau = snn_setting['tau'],
+                                    delta_t = snn_setting['delta_t'],
+                                    alpha = snn_setting['alpha'],
+                                    v_threshold_lower_bound= snn_setting['Vth_bound'])
             self.weight_avg = True
             self.tau = snn_setting['tau']
             self.delta_t = snn_setting['delta_t']
         elif neuron_type == 'if':
-            self.relu1 = IFNeuron(snn_setting)
-            self.relu2 = IFNeuron(snn_setting)
-            self.relu3 = IFNeuron(snn_setting)
+            self.relu1 = DSRIFNode(T = snn_setting['timesteps'],
+                                    v_threshold_training= snn_setting['train_Vth'],
+                                    v_threshold = snn_setting['Vth'],
+                                    alpha = snn_setting['alpha'],
+                                    v_threshold_lower_bound= snn_setting['Vth_bound'])
+            self.relu2 = DSRIFNode(T = snn_setting['timesteps'],
+                                    v_threshold_training= snn_setting['train_Vth'],
+                                    v_threshold = snn_setting['Vth'],
+                                    alpha = snn_setting['alpha'],
+                                    v_threshold_lower_bound= snn_setting['Vth_bound'])
+            self.relu3 = DSRIFNode(T = snn_setting['timesteps'],
+                                    v_threshold_training= snn_setting['train_Vth'],
+                                    v_threshold = snn_setting['Vth'],
+                                    alpha = snn_setting['alpha'],
+                                    v_threshold_lower_bound= snn_setting['Vth_bound'])
             self.weight_avg = False
         else:
             raise NotImplementedError('Please use IF or LIF model.')
@@ -147,6 +232,7 @@ class PreActResNet(nn.Module):
     def forward(self, x):
         x = torch.cat([x for _ in range(self.timesteps)], 0)
         out = self.conv1(x)
+        out = self.relu(out)
         out = self.layer1(out)
         out = self.layer2(out)
         out = self.layer3(out)
