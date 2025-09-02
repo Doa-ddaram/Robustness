@@ -15,11 +15,12 @@ import torchvision.datasets as datasets
 import torch.nn.functional as F
 import numpy as np
 import math
-import collections
+from collections import deque
 from modules.utils import Bar, Logger, AverageMeter, accuracy, mkdir_p, savefig
 from modules import preresnet, vgg
 from modules.utils.cifar10_dvs import CIFAR10DVS
-from typing import Optional
+from modules.spikingjelly.spikingjelly.activation_based import functional, learning, neuron
+from typing import Optional, List
 
 parser = argparse.ArgumentParser(description='PyTorch SNN Training')
 # Basic settings
@@ -69,7 +70,6 @@ parser.add_argument('--pin_memory', action='store_true')
 
 args = parser.parse_args()
 state = {k: v for k, v in args._get_kwargs()}
-
 # Use CUDA
 use_cuda = torch.cuda.is_available()
 device = 'cuda' if use_cuda else 'cpu'
@@ -91,7 +91,6 @@ current_iter = 0
 def main():
     global best_acc
     start_epoch = args.start_epoch  # start from epoch 0 or last checkpoint epoch
-    args.T_max = args.epochs
 
     if not os.path.isdir(args.checkpoint + '/' + args.dataset):
         mkdir_p(args.checkpoint + '/' + args.dataset)
@@ -224,18 +223,18 @@ def main():
                 print('Cannot calculate the firing rate.')
         return
 
-
     # Train and val
     for epoch in range(start_epoch, args.epochs):
+        # if epoch % 5 == 0:
+        #     train_loss, train_acc = train_stdp(trainloader, model, criterion)
+        #     print('\nEpoch: [%d | %d]' % (epoch + 1, args.epochs))
+        # else:
+        #     adjust_learning_rate(optimizer, epoch)
+        #     print('\nEpoch: [%d | %d] LR: %f' % (epoch + 1, args.epochs, state['lr']))
+        #     train_loss, train_acc = train(trainloader, model, criterion, optimizer, warmup=args.warmup)
+        adjust_learning_rate(optimizer, epoch)
         print('\nEpoch: [%d | %d] LR: %f' % (epoch + 1, args.epochs, state['lr']))
-
-        if epoch % 5 == 4:
-            train_loss, train_acc = train_stdp(trainloader, model, criterion)
-            print('\nEpoch: [%d | %d]' % (epoch + 1, args.epochs))
-        else:
-            adjust_learning_rate(optimizer, epoch)
-            print('\nEpoch: [%d | %d] LR: %f' % (epoch + 1, args.epochs, state['lr']))
-            train_loss, train_acc = train(trainloader, model, criterion, optimizer, warmup=args.warmup)
+        train_loss, train_acc = train(trainloader, model, criterion, optimizer, warmup=args.warmup)
         test_loss, test_acc = test(testloader, model, criterion)
 
         # append logger file
@@ -332,19 +331,35 @@ def train_stdp(trainloader, model, criterion):
     end = time.time()
 
     bar = Bar('Processing', max=len(trainloader))
-
+    
+    pair = []
+    pair = synapse_neuron_connect(model, pair)
+    stdp_list = [learning.STDPLearner(step_mode= 'm', synapse = synapse_layer,
+                                    sn = neuron_layer, tau_pre = 5.0, tau_post = 10.0,
+                                    f_pre = lambda x: torch.exp(x) - 1,
+                                    f_post= lambda x: torch.exp(x) - 1) for synapse_layer, neuron_layer in pair]
+    
     global current_iter
-
+    
     for batch_idx, (inputs, targets) in enumerate(trainloader):
         # measure data loading time
         data_time.update(time.time() - end)
 
         inputs, targets = inputs.to(device), targets.to(device)
-
+        
         # compute output
         outputs = model(inputs)
-        loss = criterion(outputs, targets)
+        for stdp_learner in stdp_list:
+            stdp_learner.step(on_grad= True)
 
+        loss = criterion(outputs, targets)
+        
+        functional.reset_net(model)
+        for stdp_learner in stdp_list:
+            stdp_learner.reset()
+            
+        torch.cuda.empty_cache()
+        
         # measure accuracy and record loss
         prec1, prec5 = accuracy(outputs.data, targets.data, topk=(1, 5))
         losses.update(loss.data.item(), inputs.size(0))
@@ -422,6 +437,25 @@ def test(testloader, model, criterion):
     bar.finish()
     return (losses.avg, top1.avg)
 
+def fgsm_attack(model, criterion, images, labels, epsilon):
+    images = images.clone().detach().to(device)
+    labels = labels.clone().detach().to(device)
+    images.requires_grad = True
+    model.zero_grad()
+    output = model(images)
+    loss = criterion(output, labels)
+    
+    # Compute the sign of the gradient of the loss with respect to the image
+    grad_sign = torch.autograd.grad(loss, images, retain_graph=False, create_graph=False)[0].sign()
+
+    # Generate adversarial image by adding perturbation
+    adversarial_image = images + epsilon * grad_sign
+    
+    # Clamp the adversarial image to valid pixel range [0, 1]
+    adversarial_image = torch.clamp(adversarial_image, 0, 1).detach()
+
+    return adversarial_image
+
 
 def save_checkpoint(state, is_best, checkpoint='checkpoint', filename='checkpoint'):
     filepath = os.path.join(checkpoint, filename+'.pth')
@@ -429,11 +463,21 @@ def save_checkpoint(state, is_best, checkpoint='checkpoint', filename='checkpoin
     if is_best:
         shutil.copyfile(filepath, os.path.join(checkpoint, filename+'_best.pth'))
 
-
+def synapse_neuron_connect(module: nn.Module, pairs: List):
+    prev_conv = deque()
+    for child in module.children():
+        if isinstance(child, (nn.Conv2d, nn.Linear)):
+            prev_conv.append(child)
+        elif isinstance(child, neuron.base.MemoryModule) and len(prev_conv) != 0:
+            pairs.append((prev_conv[0], child))
+            prev_conv.popleft()
+        else:
+            synapse_neuron_connect(child, pairs)
+    return pairs
 
 def adjust_learning_rate(optimizer, epoch):
     global state
-    state['lr'] = 0.5 * args.lr * (1 + math.cos(epoch/args.T_max*math.pi))
+    state['lr'] = 0.5 * args.lr * (1 + math.cos(epoch/args.epochs * math.pi))
     for param_group in optimizer.param_groups:
         param_group['lr'] = state['lr']
 
