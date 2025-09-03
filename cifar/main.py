@@ -225,17 +225,18 @@ def main():
 
     # Train and val
     for epoch in range(start_epoch, args.epochs):
-        # if epoch % 5 == 0:
-        #     train_loss, train_acc = train_stdp(trainloader, model, criterion)
-        #     print('\nEpoch: [%d | %d]' % (epoch + 1, args.epochs))
-        # else:
-        #     adjust_learning_rate(optimizer, epoch)
-        #     print('\nEpoch: [%d | %d] LR: %f' % (epoch + 1, args.epochs, state['lr']))
-        #     train_loss, train_acc = train(trainloader, model, criterion, optimizer, warmup=args.warmup)
-        adjust_learning_rate(optimizer, epoch)
-        print('\nEpoch: [%d | %d] LR: %f' % (epoch + 1, args.epochs, state['lr']))
-        train_loss, train_acc = train(trainloader, model, criterion, optimizer, warmup=args.warmup)
-        test_loss, test_acc = test(testloader, model, criterion)
+        if epoch % 5 == 0:
+            train_loss, train_acc = train_stdp(trainloader, model, criterion)
+            print('\nEpoch: [%d | %d]' % (epoch + 1, args.epochs))
+        else:
+            adjust_learning_rate(optimizer, epoch)
+            print('\nEpoch: [%d | %d] LR: %f' % (epoch + 1, args.epochs, state['lr']))
+            train_loss, train_acc = train(trainloader, model, criterion, optimizer, warmup=args.warmup)
+            
+        # adjust_learning_rate(optimizer, epoch)
+        # print('\nEpoch: [%d | %d] LR: %f' % (epoch + 1, args.epochs, state['lr']))
+        # train_loss, train_acc = train(trainloader, model, criterion, optimizer, warmup=args.warmup)
+        # test_loss, test_acc = test(testloader, model, criterion)
 
         # append logger file
         logger.append([state['lr'], train_loss, test_loss, train_acc, test_acc])
@@ -331,14 +332,15 @@ def train_stdp(trainloader, model, criterion):
     end = time.time()
 
     bar = Bar('Processing', max=len(trainloader))
-    
-    pair = []
-    pair = synapse_neuron_connect(model, pair)
+    # print(model.layer_pair)
+    # pair = []
+    # pair = synapse_neuron_connect(model, pair)
     stdp_list = [learning.STDPLearner(step_mode= 'm', synapse = synapse_layer,
                                     sn = neuron_layer, tau_pre = 5.0, tau_post = 10.0,
                                     f_pre = lambda x: torch.exp(x) - 1,
-                                    f_post= lambda x: torch.exp(x) - 1) for synapse_layer, neuron_layer in pair]
-    
+                                    f_post= lambda x: torch.exp(x) - 1) for (synapse_layer, neuron_layer) in model.layer_pair]
+    # stdp_list = stdp_list[:1]
+    # print(stdp_list)
     global current_iter
     
     for batch_idx, (inputs, targets) in enumerate(trainloader):
@@ -347,17 +349,19 @@ def train_stdp(trainloader, model, criterion):
 
         inputs, targets = inputs.to(device), targets.to(device)
         
-        # compute output
+        # # compute output
         outputs = model(inputs)
-        for stdp_learner in stdp_list:
-            stdp_learner.step(on_grad= True)
-
+        with torch.no_grad():
+            for stdp_learner in stdp_list:
+                stdp_learner.step(on_grad= True)
+                
         loss = criterion(outputs, targets)
         
-        functional.reset_net(model)
         for stdp_learner in stdp_list:
             stdp_learner.reset()
-            
+        
+        functional.reset_net(model)
+        
         torch.cuda.empty_cache()
         
         # measure accuracy and record loss
@@ -369,7 +373,7 @@ def train_stdp(trainloader, model, criterion):
         # measure elapsed time
         batch_time.update(time.time() - end)
         end = time.time()
-
+        
         # plot progress
         bar.suffix = '({batch}/{size}) Data: {data:.3f}s | Batch: {bt:.3f}s | Total: {total:} | ETA: {eta:} | Loss: {loss:.4f} | top1: {top1: .4f} | top5: {top5: .4f}'.format(
             batch=batch_idx + 1,
