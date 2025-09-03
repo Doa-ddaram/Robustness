@@ -209,23 +209,32 @@ def main():
     if args.evaluate:
         print('\nEvaluation only')
         test_loss, test_acc = test(testloader, model, criterion)
-        print(' Test Loss:  %.8f, Test Acc:  %.2f' % (test_loss, test_acc))
+        print(' Clean Test Loss:  %.8f, Test Acc:  %.2f' % (test_loss, test_acc))
         logger.append([0.0, 0.0, test_loss, 0.0, test_acc])
         logger.close()
-        try:
-            firing_rate = model.cal_rate()
-            torch.save(firing_rate, os.path.join(args.checkpoint, args.dataset, args.model + args.name + '_firing_rate.dict'))
-        except:
-            try:
-                firing_rate = model.module.cal_rate()
-                torch.save(firing_rate,os.path.join(args.checkpoint, args.dataset, args.model + args.name + '_firing_rate.dict'))
-            except:
-                print('Cannot calculate the firing rate.')
+        
+        epsilon = 0.03  # FGSM attack epsilon
+        # FGSM attack
+        fgsm_adv_test_loss, fgsm_adv_test_acc = test(testloader, model, criterion, epsilon=epsilon, fgsm=True)
+        print(' FGSM Adv Test Loss:  %.8f, Adv Test Acc:  %.2f' % (fgsm_adv_test_loss, fgsm_adv_test_acc))
+        
+        # PGD attack
+        pgd_adv_test_loss, pgd_adv_test_acc = test(testloader, model, criterion, epsilon, pgd = True)
+        print(' PGD Adv Test Loss:  %.8f, Adv Test Acc:  %.2f' % (pgd_adv_test_loss, pgd_adv_test_acc))
+        # try:
+        #     firing_rate = model.cal_rate()
+        #     torch.save(firing_rate, os.path.join(args.checkpoint, args.dataset, args.model + args.name + '_firing_rate.dict'))
+        # except:
+        #     try:
+        #         firing_rate = model.module.cal_rate()
+        #         torch.save(firing_rate,os.path.join(args.checkpoint, args.dataset, args.model + args.name + '_firing_rate.dict'))
+        #     except:
+        #         print('Cannot calculate the firing rate.')
         return
 
     # Train and val
     for epoch in range(start_epoch, args.epochs):
-        if epoch % 5 == 0:
+        if epoch % 5 == 4:
             train_loss, train_acc = train_stdp(trainloader, model, criterion)
             print('\nEpoch: [%d | %d]' % (epoch + 1, args.epochs))
         else:
@@ -236,7 +245,8 @@ def main():
         # adjust_learning_rate(optimizer, epoch)
         # print('\nEpoch: [%d | %d] LR: %f' % (epoch + 1, args.epochs, state['lr']))
         # train_loss, train_acc = train(trainloader, model, criterion, optimizer, warmup=args.warmup)
-        # test_loss, test_acc = test(testloader, model, criterion)
+        
+        test_loss, test_acc = test(testloader, model, criterion)
 
         # append logger file
         logger.append([state['lr'], train_loss, test_loss, train_acc, test_acc])
@@ -332,15 +342,14 @@ def train_stdp(trainloader, model, criterion):
     end = time.time()
 
     bar = Bar('Processing', max=len(trainloader))
-    # print(model.layer_pair)
-    # pair = []
-    # pair = synapse_neuron_connect(model, pair)
+    
+    pair = []
+    pair = synapse_neuron_connect(model, pair)
     stdp_list = [learning.STDPLearner(step_mode= 'm', synapse = synapse_layer,
                                     sn = neuron_layer, tau_pre = 5.0, tau_post = 10.0,
                                     f_pre = lambda x: torch.exp(x) - 1,
-                                    f_post= lambda x: torch.exp(x) - 1) for (synapse_layer, neuron_layer) in model.layer_pair]
-    # stdp_list = stdp_list[:1]
-    # print(stdp_list)
+                                    f_post= lambda x: torch.exp(x) - 1) for (synapse_layer, neuron_layer) in pair]
+
     global current_iter
     
     for batch_idx, (inputs, targets) in enumerate(trainloader):
@@ -441,25 +450,43 @@ def test(testloader, model, criterion):
     bar.finish()
     return (losses.avg, top1.avg)
 
-def fgsm_attack(model, criterion, images, labels, epsilon):
-    images = images.clone().detach().to(device)
+def fgsm_attack(model, criterion, images, labels, epsilon : int = 0.03):
+    original_images = images.clone().detach().to(device)
     labels = labels.clone().detach().to(device)
-    images.requires_grad = True
+    original_images.requires_grad = True
     model.zero_grad()
-    output = model(images)
+    output = model(original_images)
     loss = criterion(output, labels)
     
     # Compute the sign of the gradient of the loss with respect to the image
-    grad_sign = torch.autograd.grad(loss, images, retain_graph=False, create_graph=False)[0].sign()
+    grad_sign = torch.autograd.grad(loss, original_images, retain_graph=False, create_graph=False)[0].sign()
 
     # Generate adversarial image by adding perturbation
-    adversarial_image = images + epsilon * grad_sign
+    adversarial_image = original_images + epsilon * grad_sign
     
     # Clamp the adversarial image to valid pixel range [0, 1]
     adversarial_image = torch.clamp(adversarial_image, 0, 1).detach()
 
     return adversarial_image
 
+def pgd_attack(model, criterion, images, labels, epsilon, alpha, num_iter):
+    original_images = images.clone().detach()
+    perturbed = images.clone().detach().requires_grad_(True)
+
+    for _ in range(num_iter):
+        outputs = model(perturbed)
+        loss = criterion(outputs, labels)
+        model.zero_grad()
+        loss.backward()
+        
+        # update
+        grad_sign = perturbed.grad.detach().sign()
+        perturbed = perturbed + alpha * grad_sign
+        # projection
+        adversarial_image = torch.max(torch.min(perturbed, original_images + epsilon), original_images - epsilon)
+        adversarial_image = torch.clamp(adversarial_image, 0, 1).detach().requires_grad_(True)
+
+    return adversarial_image.detach()
 
 def save_checkpoint(state, is_best, checkpoint='checkpoint', filename='checkpoint'):
     filepath = os.path.join(checkpoint, filename+'.pth')
@@ -474,7 +501,7 @@ def synapse_neuron_connect(module: nn.Module, pairs: List):
             prev_conv.append(child)
         elif isinstance(child, neuron.base.MemoryModule) and len(prev_conv) != 0:
             pairs.append((prev_conv[0], child))
-            prev_conv.popleft()
+            prev_conv.pop()
         else:
             synapse_neuron_connect(child, pairs)
     return pairs
