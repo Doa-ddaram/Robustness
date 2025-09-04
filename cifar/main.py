@@ -219,7 +219,7 @@ def main():
         print(' FGSM Adv Test Loss:  %.8f, Adv Test Acc:  %.2f' % (fgsm_adv_test_loss, fgsm_adv_test_acc))
         
         # PGD attack
-        pgd_adv_test_loss, pgd_adv_test_acc = test(testloader, model, criterion, epsilon, pgd = True)
+        pgd_adv_test_loss, pgd_adv_test_acc = test(testloader, model, criterion, epsilon = 0.03, pgd = True)
         print(' PGD Adv Test Loss:  %.8f, Adv Test Acc:  %.2f' % (pgd_adv_test_loss, pgd_adv_test_acc))
         # try:
         #     firing_rate = model.cal_rate()
@@ -397,10 +397,14 @@ def train_stdp(trainloader, model, criterion):
         )
         bar.next()
     bar.finish()
+    
+    for stdp_learner in stdp_list:
+        stdp_learner.disable()
+        
     return (losses.avg, top1.avg)
 
 
-def test(testloader, model, criterion):
+def test(testloader, model, criterion, epsilon : float = 0.03, fgsm : bool = False, pgd : bool = False):
     global best_acc
 
     batch_time = AverageMeter()
@@ -420,6 +424,9 @@ def test(testloader, model, criterion):
 
         inputs, targets = inputs.to(device), targets.to(device)
 
+        inputs = fgsm_attack(model, criterion, inputs, targets, epsilon) if fgsm else inputs
+        inputs = pgd_attack(model, criterion, inputs, targets, epsilon, alpha=0.01, num_iter=7) if pgd else inputs
+        
         # compute output
         outputs = model(inputs)
         loss = criterion(outputs, targets)
@@ -450,7 +457,7 @@ def test(testloader, model, criterion):
     bar.finish()
     return (losses.avg, top1.avg)
 
-def fgsm_attack(model, criterion, images, labels, epsilon : int = 0.03):
+def fgsm_attack(model, criterion, images, labels, epsilon : float = 0.03):
     original_images = images.clone().detach().to(device)
     labels = labels.clone().detach().to(device)
     original_images.requires_grad = True
@@ -469,24 +476,29 @@ def fgsm_attack(model, criterion, images, labels, epsilon : int = 0.03):
 
     return adversarial_image
 
-def pgd_attack(model, criterion, images, labels, epsilon, alpha, num_iter):
-    original_images = images.clone().detach()
-    perturbed = images.clone().detach().requires_grad_(True)
+def pgd_attack(model, criterion, images, labels, epsilon : float = 0.03, alpha : float = 0.01, num_iter : int = 7):
+    images = images.clone().detach().to(device)
+    labels = labels.clone().detach().to(device)
+    original_images = images.data
 
     for _ in range(num_iter):
-        outputs = model(perturbed)
-        loss = criterion(outputs, labels)
+        images.requires_grad_()
+        outputs = model(images)
+        
+        
         model.zero_grad()
+        loss = criterion(outputs, labels)
         loss.backward()
         
         # update
-        grad_sign = perturbed.grad.detach().sign()
-        perturbed = perturbed + alpha * grad_sign
+        grad_sign = images.grad.detach().sign()
+        perturbed = images + alpha * grad_sign
+        
         # projection
         adversarial_image = torch.max(torch.min(perturbed, original_images + epsilon), original_images - epsilon)
         adversarial_image = torch.clamp(adversarial_image, 0, 1).detach().requires_grad_(True)
 
-    return adversarial_image.detach()
+    return adversarial_image
 
 def save_checkpoint(state, is_best, checkpoint='checkpoint', filename='checkpoint'):
     filepath = os.path.join(checkpoint, filename+'.pth')
